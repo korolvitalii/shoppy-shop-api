@@ -1,0 +1,26 @@
+{
+  "name": "shoppy-shop-api-tooling",
+  "version": "1.0.0",
+  "description": "Repository-local tooling for the ShoppyShop API",
+  "scripts": {
+    "cdk": "cdk",
+    "cdk:synth": "cdk synth"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/korolvitalii/shoppy-shop-api.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/korolvitalii/shoppy-shop-api/issues"
+  },
+  "homepage": "https://github.com/korolvitalii/shoppy-shop-api#readme",
+  "private": true,
+  "packageManager": "npm@11.16.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.1132.0"
+  }
+}

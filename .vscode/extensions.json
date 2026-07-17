@@ -1,0 +1,7 @@
+{
+  "recommendations": [
+    "amazonwebservices.aws-toolkit-vscode",
+    "ms-azuretools.vscode-docker",
+    "ms-dotnettools.csdevkit"
+  ]
+}
