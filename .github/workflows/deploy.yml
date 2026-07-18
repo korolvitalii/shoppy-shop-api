@@ -37,7 +37,7 @@ jobs:
           dotnet restore ShoppyShop.slnx --locked-mode
           dotnet build ShoppyShop.slnx -c Release --no-restore
           dotnet test ShoppyShop.slnx -c Release --no-build
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
