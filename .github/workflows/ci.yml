@@ -1,0 +1,49 @@
+name: API CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Restore repository tools
+        run: |
+          npm ci
+          dotnet tool restore
+      - name: Restore locked dependencies
+        run: dotnet restore ShoppyShop.slnx --locked-mode
+      - name: Build
+        run: dotnet build ShoppyShop.slnx -c Release --no-restore
+      - name: Test
+        run: dotnet test ShoppyShop.slnx -c Release --no-build --logger trx --results-directory TestResults
+      - name: Audit dependencies
+        run: dotnet list ShoppyShop.slnx package --vulnerable --include-transitive
+      - name: Verify formatting
+        run: dotnet format ShoppyShop.slnx --verify-no-changes --no-restore
+      - name: Synthesize AWS infrastructure
+        run: npx cdk synth -c notificationEmail=ci@example.invalid -c imageTag=ci --quiet
+      - name: Build container
+        run: docker build --tag shoppy-shop-api:ci .
+      - name: Scan container
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: shoppy-shop-api:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL

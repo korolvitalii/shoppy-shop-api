@@ -1,0 +1,63 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-api
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPOSITORY: shoppy-shop-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Restore and test
+        run: |
+          npm ci
+          dotnet tool restore
+          dotnet restore ShoppyShop.slnx --locked-mode
+          dotnet build ShoppyShop.slnx -c Release --no-restore
+          dotnet test ShoppyShop.slnx -c Release --no-build
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build --tag "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+      - name: Deploy application stack
+        env:
+          NOTIFICATION_EMAIL: ${{ vars.BUDGET_NOTIFICATION_EMAIL }}
+          ADMIN_EMAIL: ${{ vars.ADMIN_EMAIL }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: >-
+          npx cdk deploy ShoppyShopApi
+          --require-approval never
+          -c notificationEmail="$NOTIFICATION_EMAIL"
+          -c adminEmail="$ADMIN_EMAIL"
+          -c imageTag="$IMAGE_TAG"
