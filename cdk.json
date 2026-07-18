@@ -1,0 +1,9 @@
+{
+  "app": "dotnet run --project infra/ShoppyShop.Cdk/ShoppyShop.Cdk.csproj",
+  "context": {
+    "githubOwner": "korolvitalii",
+    "githubRepository": "shoppy-shop-api",
+    "frontendOrigin": "https://zeta.vercel.app",
+    "@aws-cdk/core:defaultCrossStackReferences": "strong"
+  }
+}

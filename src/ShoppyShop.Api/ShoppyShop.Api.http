@@ -1,0 +1,11 @@
+@ShoppyShop.Api_HostAddress = https://localhost:7061
+
+GET {{ShoppyShop.Api_HostAddress}}/health/live
+Accept: application/json
+
+###
+
+GET {{ShoppyShop.Api_HostAddress}}/api/product-groups
+Accept: application/json
+
+###

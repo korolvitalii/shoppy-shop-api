@@ -1,0 +1,252 @@
+{
+  "info": {
+    "_postman_id": "6c48f218-e2ec-4ef7-b913-b83a2ca68465",
+    "name": "ShoppyShop API",
+    "description": "Local acceptance collection for the ShoppyShop .NET API. Select the ShoppyShop API - Local environment before running. Postman retains the secure refresh cookie automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health and documentation",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/health/live" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('API is alive', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Readiness",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/health/ready" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Database is ready', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "OpenAPI document",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/openapi/v1.json" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('OpenAPI is available', () => pm.response.to.have.status(200));", "pm.test('Bearer scheme is documented', () => pm.expect(pm.response.text()).to.include('Bearer'));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Catalogue",
+      "item": [
+        {
+          "name": "Get product groups",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/product-groups" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Six seeded groups are returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.have.length(6); });"] } }]
+        },
+        {
+          "name": "Search and sort products",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/products?search=table&sort=price-asc&price=0-50" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Product search succeeds', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Get group products",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/product-groups/beauty/products" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Beauty products are returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().length).to.be.above(0); });"] } }]
+        },
+        {
+          "name": "Get product details",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/product-groups/beauty/products/beauty-1" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Seeded product is returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql('beauty-1'); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Customer authentication",
+      "item": [
+        {
+          "name": "Register customer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\",\n  \"displayName\": \"Postman Customer\"\n}" },
+            "url": "{{baseUrl}}/api/auth/register"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Registration succeeds or user already exists', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));", "if (pm.response.code === 200) pm.environment.set('customerAccessToken', pm.response.json().accessToken);"] } }]
+        },
+        {
+          "name": "Login customer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}" },
+            "url": "{{baseUrl}}/api/auth/login"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer login succeeds', () => pm.response.to.have.status(200));", "pm.environment.set('customerAccessToken', pm.response.json().accessToken);"] } }]
+        },
+        {
+          "name": "Get current customer",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerAccessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/me"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Current customer is returned', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Refresh customer token",
+          "request": { "method": "POST", "header": [], "url": "{{baseUrl}}/api/auth/refresh" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Refresh cookie rotates successfully', () => pm.response.to.have.status(200));", "pm.environment.set('customerAccessToken', pm.response.json().accessToken);"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Favourites",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerAccessToken}}", "type": "string" }] },
+      "item": [
+        {
+          "name": "Save favourite",
+          "request": { "method": "PUT", "header": [], "url": "{{baseUrl}}/api/favorites/beauty-1" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Favourite is saved', () => pm.response.to.have.status(204));"] } }]
+        },
+        {
+          "name": "Get favourites",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/favorites" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Saved favourite is returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().some(x => x.id === 'beauty-1')).to.be.true; });"] } }]
+        },
+        {
+          "name": "Remove favourite",
+          "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/api/favorites/beauty-1" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Favourite is removed', () => pm.response.to.have.status(204));"] } }]
+        },
+        {
+          "name": "Clear favourites",
+          "request": { "method": "DELETE", "header": [], "url": "{{baseUrl}}/api/favorites" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Favourites are cleared', () => pm.response.to.have.status(204));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerAccessToken}}", "type": "string" }] },
+      "item": [
+        {
+          "name": "Create server-priced order",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"lines\": [\n    {\n      \"productId\": \"beauty-1\",\n      \"groupId\": \"beauty\",\n      \"name\": \"Client value is ignored\",\n      \"imageUrl\": \"https://example.test/wrong.jpg\",\n      \"unitPrice\": 0.01,\n      \"quantity\": 2\n    }\n  ],\n  \"delivery\": {\n    \"name\": \"Postman Customer\",\n    \"email\": \"{{customerEmail}}\",\n    \"address\": \"1 Test Street\",\n    \"city\": \"London\",\n    \"postcode\": \"SW1A 1AA\",\n    \"country\": \"United Kingdom\"\n  },\n  \"deliveryMethod\": \"standard\",\n  \"paymentToken\": {\n    \"tokenId\": \"tok_postman_demo\",\n    \"brand\": \"Visa\",\n    \"last4\": \"4242\"\n  },\n  \"subtotal\": 0.02,\n  \"deliveryCharge\": 0,\n  \"total\": 0.02\n}" },
+            "url": "{{baseUrl}}/api/orders"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Order is created', () => pm.response.to.have.status(201));", "const order = pm.response.json();", "pm.environment.set('orderId', order.id);", "pm.test('Server recalculates the total', () => pm.expect(order.total).to.eql(248.93));", "pm.test('Readable order number is returned', () => pm.expect(order.id).to.match(/^ORD-\\d{5,}$/));"] } }]
+        },
+        {
+          "name": "Retry identical order",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"lines\": [{ \"productId\": \"beauty-1\", \"groupId\": \"beauty\", \"name\": \"Client value is ignored\", \"imageUrl\": \"https://example.test/wrong.jpg\", \"unitPrice\": 0.01, \"quantity\": 2 }],\n  \"delivery\": { \"name\": \"Postman Customer\", \"email\": \"{{customerEmail}}\", \"address\": \"1 Test Street\", \"city\": \"London\", \"postcode\": \"SW1A 1AA\", \"country\": \"United Kingdom\" },\n  \"deliveryMethod\": \"standard\",\n  \"paymentToken\": { \"tokenId\": \"tok_postman_demo\", \"brand\": \"Visa\", \"last4\": \"4242\" },\n  \"subtotal\": 0.02, \"deliveryCharge\": 0, \"total\": 0.02\n}" },
+            "url": "{{baseUrl}}/api/orders"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Retry returns the original order', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().id).to.eql(pm.environment.get('orderId')); });"] } }]
+        },
+        {
+          "name": "Get order history",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Order history is returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().length).to.be.above(0); });"] } }]
+        },
+        {
+          "name": "Get order by number",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders/{{orderId}}" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Created order is returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql(pm.environment.get('orderId')); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Administration",
+      "item": [
+        {
+          "name": "Login administrator",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" },
+            "url": "{{baseUrl}}/api/auth/login"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Admin login succeeds', () => pm.response.to.have.status(200));", "pm.environment.set('adminAccessToken', pm.response.json().accessToken);"] } }]
+        },
+        {
+          "name": "Get all Admin products",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/products"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Admin catalogue is accessible', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create or update test group",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"id\": \"postman-group\",\n  \"name\": \"Postman group\",\n  \"description\": \"Created from the Postman collection\",\n  \"imageUrl\": \"https://example.test/group.jpg\",\n  \"badge\": \"Test\",\n  \"displayOrder\": 99\n}" },
+            "url": "{{baseUrl}}/api/admin/product-groups/postman-group"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Group is upserted', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create or update test product",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"id\": \"postman-product\",\n  \"groupId\": \"postman-group\",\n  \"name\": \"Postman product\",\n  \"brand\": \"Postman\",\n  \"description\": \"Created from the Postman collection\",\n  \"imageUrl\": \"https://example.test/product.jpg\",\n  \"price\": 25,\n  \"salePrice\": 20,\n  \"inStock\": true\n}" },
+            "url": "{{baseUrl}}/api/admin/products/postman-product"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Product is upserted', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Deactivate test product",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/products/postman-product"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Product is soft deleted', () => pm.response.to.have.status(204));"] } }]
+        },
+        {
+          "name": "Deactivate test group",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/product-groups/postman-group"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Group is soft deleted', () => pm.response.to.have.status(204));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Optional session operations",
+      "description": "Run manually. Password change alters the local customer credentials, while logout clears the active refresh cookie.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": ["if (pm.environment.get('runOptionalOperations') !== 'true') pm.execution.skipRequest();"]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Change customer password",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerAccessToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"{{customerPassword}}\",\n  \"newPassword\": \"Customer!NewPassword456\"\n}" },
+            "url": "{{baseUrl}}/api/auth/change-password"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": { "method": "POST", "header": [], "url": "{{baseUrl}}/api/auth/logout" }
+        }
+      ]
+    }
+  ]
+}

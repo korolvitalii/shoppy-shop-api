@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/infra/">
+    <Project Path="infra/ShoppyShop.Cdk/ShoppyShop.Cdk.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/ShoppyShop.Api/ShoppyShop.Api.csproj" />
+    <Project Path="src/ShoppyShop.Application/ShoppyShop.Application.csproj" />
+    <Project Path="src/ShoppyShop.Domain/ShoppyShop.Domain.csproj" />
+    <Project Path="src/ShoppyShop.Infrastructure/ShoppyShop.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ShoppyShop.IntegrationTests/ShoppyShop.IntegrationTests.csproj" />
+    <Project Path="tests/ShoppyShop.UnitTests/ShoppyShop.UnitTests.csproj" />
+  </Folder>
+</Solution>
