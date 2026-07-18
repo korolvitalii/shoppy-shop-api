@@ -1,5 +1,8 @@
 root = true
 
+[**/Migrations/*.cs]
+generated_code = true
+
 # All files
 [*]
 indent_style = space
