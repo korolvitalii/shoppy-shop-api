@@ -26,6 +26,7 @@ public sealed class ApiExceptionHandler(
             AppUnauthorizedException => (StatusCodes.Status401Unauthorized, "Authentication failed"),
             AppNotFoundException => (StatusCodes.Status404NotFound, "Resource not found"),
             AppConflictException => (StatusCodes.Status409Conflict, "Request conflict"),
+            AppUnprocessableException => (StatusCodes.Status422UnprocessableEntity, "Request could not be processed"),
             _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred"),
         };
 

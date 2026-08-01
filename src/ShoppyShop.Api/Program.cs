@@ -73,8 +73,6 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
         }));
 });
-builder.Services.AddHealthChecks();
-
 var app = builder.Build();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();

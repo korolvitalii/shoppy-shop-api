@@ -74,7 +74,7 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
         var products = await dbContext.Products.Where(x => productIds.Contains(x.Id)).ToArrayAsync(cancellationToken);
         if (products.Length != productIds.Length)
         {
-            throw new AppValidationException("One or more products do not exist.");
+            throw new AppUnprocessableException("One or more products do not exist.");
         }
 
         if (products.Any(x => !x.InStock))

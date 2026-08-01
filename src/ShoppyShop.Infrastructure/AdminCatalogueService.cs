@@ -57,12 +57,12 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         ValidateId(id, request.Id);
         if (request.Price <= 0 || request.SalePrice is <= 0 || request.SalePrice >= request.Price)
         {
-            throw new AppValidationException("Price must be positive and sale price must be lower than price.");
+            throw new AppUnprocessableException("Price must be positive and sale price must be lower than price.");
         }
 
         if (!await dbContext.ProductGroups.IgnoreQueryFilters().AnyAsync(x => x.Id == request.GroupId && !x.IsDeleted, cancellationToken))
         {
-            throw new AppValidationException("The product group does not exist.");
+            throw new AppUnprocessableException("The product group does not exist.");
         }
 
         var product = await dbContext.Products.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
