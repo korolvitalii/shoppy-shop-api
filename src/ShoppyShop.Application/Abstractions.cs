@@ -50,3 +50,4 @@ public sealed class AppValidationException(string message, IReadOnlyDictionary<s
 public sealed class AppConflictException(string message) : Exception(message);
 public sealed class AppNotFoundException(string message) : Exception(message);
 public sealed class AppUnauthorizedException(string message) : Exception(message);
+public sealed class AppUnprocessableException(string message) : Exception(message);
