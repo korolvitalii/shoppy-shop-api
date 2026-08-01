@@ -46,7 +46,7 @@ jobs:
       - name: Build container
         run: docker build --tag shoppy-shop-api:ci .
       - name: Scan container
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: shoppy-shop-api:ci
           format: table
