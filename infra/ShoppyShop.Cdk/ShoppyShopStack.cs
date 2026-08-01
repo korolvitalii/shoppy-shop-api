@@ -16,7 +16,9 @@ namespace ShoppyShop.Cdk;
 public sealed class DeploymentFoundationProps : StackProps
 {
     public required string GitHubOwner { get; init; }
+    public required string GitHubOwnerId { get; init; }
     public required string GitHubRepository { get; init; }
+    public required string GitHubRepositoryId { get; init; }
 }
 
 public sealed class DeploymentFoundation : Stack
@@ -46,7 +48,8 @@ public sealed class DeploymentFoundation : Stack
                 ["StringEquals"] = new Dictionary<string, string>
                 {
                     ["token.actions.githubusercontent.com:aud"] = "sts.amazonaws.com",
-                    ["token.actions.githubusercontent.com:sub"] = $"repo:{props.GitHubOwner}/{props.GitHubRepository}:ref:refs/heads/main",
+                    ["token.actions.githubusercontent.com:sub"] =
+                        $"repo:{props.GitHubOwner}@{props.GitHubOwnerId}/{props.GitHubRepository}@{props.GitHubRepositoryId}:ref:refs/heads/main",
                 },
             }),
         });

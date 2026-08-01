@@ -15,7 +15,9 @@ public sealed class InfrastructureTests
         var foundation = new DeploymentFoundation(app, "Foundation", new DeploymentFoundationProps
         {
             GitHubOwner = "owner",
+            GitHubOwnerId = "123456",
             GitHubRepository = "repository",
+            GitHubRepositoryId = "789012",
             Env = environment,
         });
         var stack = new ShoppyShopInfrastructure(app, "Api", new ShoppyShopInfrastructureProps
@@ -43,6 +45,46 @@ public sealed class InfrastructureTests
         {
             ["MinSize"] = 1,
             ["MaxSize"] = 2,
+        });
+    }
+
+    [Fact]
+    public void FoundationTrustsOnlyTheImmutableMainBranchSubject()
+    {
+        var app = new App();
+        var foundation = new DeploymentFoundation(app, "Foundation", new DeploymentFoundationProps
+        {
+            GitHubOwner = "owner",
+            GitHubOwnerId = "123456",
+            GitHubRepository = "repository",
+            GitHubRepositoryId = "789012",
+            Env = new Amazon.CDK.Environment { Account = "123456789012", Region = "eu-central-1" },
+        });
+        var template = Template.FromStack(foundation);
+
+        template.HasResourceProperties("AWS::IAM::Role", new Dictionary<string, object>
+        {
+            ["RoleName"] = "ShoppyShopGitHubDeployRole",
+            ["AssumeRolePolicyDocument"] = new Dictionary<string, object>
+            {
+                ["Statement"] = new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["Action"] = "sts:AssumeRoleWithWebIdentity",
+                        ["Condition"] = new Dictionary<string, object>
+                        {
+                            ["StringEquals"] = new Dictionary<string, string>
+                            {
+                                ["token.actions.githubusercontent.com:aud"] = "sts.amazonaws.com",
+                                ["token.actions.githubusercontent.com:sub"] =
+                                    "repo:owner@123456/repository@789012:ref:refs/heads/main",
+                            },
+                        },
+                        ["Effect"] = "Allow",
+                    },
+                },
+            },
         });
     }
 }

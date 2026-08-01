@@ -21,7 +21,11 @@ public static class Program
         var foundation = new DeploymentFoundation(app, "ShoppyShopFoundation", new DeploymentFoundationProps
         {
             GitHubOwner = app.Node.TryGetContext("githubOwner") as string ?? "korolvitalii",
+            GitHubOwnerId = app.Node.TryGetContext("githubOwnerId") as string
+                ?? throw new InvalidOperationException("CDK context 'githubOwnerId' is required."),
             GitHubRepository = app.Node.TryGetContext("githubRepository") as string ?? "shoppy-shop-api",
+            GitHubRepositoryId = app.Node.TryGetContext("githubRepositoryId") as string
+                ?? throw new InvalidOperationException("CDK context 'githubRepositoryId' is required."),
             Env = environment,
         });
         _ = new ShoppyShopInfrastructure(app, "ShoppyShopApi", new ShoppyShopInfrastructureProps
