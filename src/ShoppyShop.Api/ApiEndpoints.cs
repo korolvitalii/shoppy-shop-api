@@ -1,5 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 
+using Microsoft.Extensions.Options;
+
 using ShoppyShop.Application;
 using ShoppyShop.Infrastructure;
 
@@ -12,6 +14,7 @@ public static class ApiEndpoints
     public static IEndpointRouteBuilder MapApiEndpoints(this IEndpointRouteBuilder endpoints)
     {
         MapCatalogue(endpoints.MapGroup("/api").WithTags("Catalogue"));
+        MapFeatureConfig(endpoints.MapGroup("/api").WithTags("Configuration"));
         MapAssistant(endpoints.MapGroup("/api/assistant").WithTags("Assistant").RequireRateLimiting("assistant"));
         MapAuth(endpoints.MapGroup("/api/auth").WithTags("Authentication"));
         MapFavorites(endpoints.MapGroup("/api/favorites").WithTags("Favorites").RequireAuthorization());
@@ -61,6 +64,12 @@ public static class ApiEndpoints
             var product = await service.GetProductAsync(groupId, productId, false, cancellationToken);
             return product is null ? Results.NotFound() : Results.Ok(product);
         });
+    }
+
+    private static void MapFeatureConfig(RouteGroupBuilder api)
+    {
+        api.MapGet("/feature-config", (IOptions<FeatureConfigOptions> options) =>
+            new FeatureConfigDto(options.Value.AssistantEnabled));
     }
 
     private static void MapAssistant(RouteGroupBuilder assistant)

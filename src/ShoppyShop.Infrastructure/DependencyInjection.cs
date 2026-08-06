@@ -55,6 +55,7 @@ public static class DependencyInjection
 
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<AnthropicOptions>(configuration.GetSection(AnthropicOptions.SectionName));
+        services.Configure<FeatureConfigOptions>(configuration.GetSection(FeatureConfigOptions.SectionName));
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<ICatalogueService, CatalogueService>();
         services.AddScoped<IAuthService, AuthService>();

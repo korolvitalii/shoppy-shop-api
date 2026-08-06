@@ -96,6 +96,8 @@ public sealed record ProductWriteRequest(
     decimal? SalePrice,
     bool InStock);
 
+public sealed record FeatureConfigDto(bool AssistantEnabled);
+
 public sealed record AssistantChatTurn(string Role, string Content);
 public sealed record AssistantChatRequest(string Message, IReadOnlyList<AssistantChatTurn>? History = null);
 public sealed record AssistantChatResponse(string Reply, IReadOnlyCollection<ProductDto> Products);
