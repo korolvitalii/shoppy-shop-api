@@ -153,6 +153,12 @@ public sealed class ShoppyShopInfrastructure : Stack
             Description = "One-time ShoppyShop bootstrap administrator password",
             GenerateSecretString = new SecretStringGenerator { PasswordLength = 32 },
         });
+        // CDK creates this with a random placeholder value on first deploy — it must be
+        // overwritten once with the real key via `aws secretsmanager put-secret-value`.
+        var anthropicApiKey = new Secret(this, "AnthropicApiKey", new SecretProps
+        {
+            Description = "Anthropic API key for the shopping assistant",
+        });
 
         var imageAccessRole = new Role(this, "AppRunnerImageAccessRole", new RoleProps
         {
@@ -167,6 +173,7 @@ public sealed class ShoppyShopInfrastructure : Stack
         database.Secret!.GrantRead(instanceRole);
         jwtSecret.GrantRead(instanceRole);
         adminPassword.GrantRead(instanceRole);
+        anthropicApiKey.GrantRead(instanceRole);
 
         var connector = new CfnVpcConnector(this, "VpcConnector", new CfnVpcConnectorProps
         {
@@ -209,6 +216,7 @@ public sealed class ShoppyShopInfrastructure : Stack
                             Variable("Jwt__Audience", "ShoppyShop.Web"),
                             Variable("BootstrapAdmin__Email", props.AdminEmail),
                             Variable("Cors__AllowedOrigins__0", props.FrontendOrigin),
+                            Variable("Anthropic__Model", "claude-haiku-4-5"),
                         },
                         RuntimeEnvironmentSecrets = new[]
                         {
@@ -216,6 +224,7 @@ public sealed class ShoppyShopInfrastructure : Stack
                             Variable("Database__Password", $"{database.Secret.SecretArn}:password::"),
                             Variable("Jwt__SigningKey", jwtSecret.SecretArn),
                             Variable("BootstrapAdmin__Password", adminPassword.SecretArn),
+                            Variable("Anthropic__ApiKey", anthropicApiKey.SecretArn),
                         },
                     },
                 },
@@ -339,6 +348,7 @@ public sealed class ShoppyShopInfrastructure : Stack
         _ = new CfnOutput(this, "ServiceArn", new CfnOutputProps { Value = service.AttrServiceArn });
         _ = new CfnOutput(this, "DatabaseSecretArn", new CfnOutputProps { Value = database.Secret.SecretArn });
         _ = new CfnOutput(this, "BootstrapAdminSecretArn", new CfnOutputProps { Value = adminPassword.SecretArn });
+        _ = new CfnOutput(this, "AnthropicApiKeySecretArn", new CfnOutputProps { Value = anthropicApiKey.SecretArn });
     }
 
     private static CfnService.KeyValuePairProperty Variable(string name, string value) => new()

@@ -481,3 +481,8 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Agent knowledge scratch space (not synced via git)
+/agent-knowledge/
+/CLAUDE.md
+/cdk.context.json
