@@ -181,6 +181,11 @@
           "Microsoft.Extensions.Logging": "10.0.10"
         }
       },
+      "Microsoft.Extensions.AI.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.5.1",
+        "contentHash": "nB0l3IlsVbNeUxsE7nZNb9GY8rP1OSeqpj0pseORPejt474HNKEauTWTLdSJPkSvPlRMxowZNMo6nyp7APAiSg=="
+      },
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "Transitive",
         "resolved": "10.0.10",
@@ -683,11 +688,21 @@
       "shoppyshop.infrastructure": {
         "type": "Project",
         "dependencies": {
+          "Anthropic": "[12.39.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.10, )",
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.10, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
           "ShoppyShop.Application": "[1.0.0, )",
           "ShoppyShop.Domain": "[1.0.0, )"
+        }
+      },
+      "Anthropic": {
+        "type": "CentralTransitive",
+        "requested": "[12.39.0, )",
+        "resolved": "12.39.0",
+        "contentHash": "vm3zmtYzCgeHmI/2QCCv8x7/dSavaQ24OqSvtoO0JSu0ZRyBYRRZJsUVbOP+/YJl4+P1I7HefGqOEOStw4T7Ew==",
+        "dependencies": {
+          "Microsoft.Extensions.AI.Abstractions": "10.5.1"
         }
       },
       "Microsoft.AspNetCore.Authentication.JwtBearer": {

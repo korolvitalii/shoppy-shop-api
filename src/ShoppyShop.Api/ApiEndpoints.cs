@@ -1,5 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 
+using Microsoft.Extensions.Options;
+
 using ShoppyShop.Application;
 using ShoppyShop.Infrastructure;
 
@@ -12,6 +14,8 @@ public static class ApiEndpoints
     public static IEndpointRouteBuilder MapApiEndpoints(this IEndpointRouteBuilder endpoints)
     {
         MapCatalogue(endpoints.MapGroup("/api").WithTags("Catalogue"));
+        MapFeatureConfig(endpoints.MapGroup("/api").WithTags("Configuration"));
+        MapAssistant(endpoints.MapGroup("/api/assistant").WithTags("Assistant").RequireRateLimiting("assistant"));
         MapAuth(endpoints.MapGroup("/api/auth").WithTags("Authentication"));
         MapFavorites(endpoints.MapGroup("/api/favorites").WithTags("Favorites").RequireAuthorization());
         MapOrders(endpoints.MapGroup("/api/orders").WithTags("Orders").RequireAuthorization());
@@ -33,7 +37,7 @@ public static class ApiEndpoints
             ICatalogueService service,
             CancellationToken cancellationToken) =>
         {
-            (minPrice, maxPrice) = ApplyPricePreset(price, minPrice, maxPrice);
+            (minPrice, maxPrice) = PricePresets.Resolve(price, minPrice, maxPrice);
             return service.GetProductsAsync(new ProductQuery(search, sort, minPrice, maxPrice), cancellationToken);
         });
 
@@ -47,7 +51,7 @@ public static class ApiEndpoints
             ICatalogueService service,
             CancellationToken cancellationToken) =>
         {
-            (minPrice, maxPrice) = ApplyPricePreset(price, minPrice, maxPrice);
+            (minPrice, maxPrice) = PricePresets.Resolve(price, minPrice, maxPrice);
             return service.GetGroupProductsAsync(groupId, new ProductQuery(search, sort, minPrice, maxPrice), cancellationToken);
         });
 
@@ -60,6 +64,20 @@ public static class ApiEndpoints
             var product = await service.GetProductAsync(groupId, productId, false, cancellationToken);
             return product is null ? Results.NotFound() : Results.Ok(product);
         });
+    }
+
+    private static void MapFeatureConfig(RouteGroupBuilder api)
+    {
+        api.MapGet("/feature-config", (IOptions<FeatureConfigOptions> options) =>
+            new FeatureConfigDto(options.Value.AssistantEnabled));
+    }
+
+    private static void MapAssistant(RouteGroupBuilder assistant)
+    {
+        assistant.MapPost("/chat", (
+            AssistantChatRequest request,
+            IAssistantService service,
+            CancellationToken cancellationToken) => service.ChatAsync(request, cancellationToken));
     }
 
     private static void MapAuth(RouteGroupBuilder auth)
@@ -226,13 +244,4 @@ public static class ApiEndpoints
         var value = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
         return Guid.TryParse(value, out var id) ? id : throw new AppUnauthorizedException("User identifier is missing.");
     }
-
-    private static (decimal? Min, decimal? Max) ApplyPricePreset(string? price, decimal? min, decimal? max) =>
-        price switch
-        {
-            "0-50" => (0, 49.99m),
-            "50-200" => (50, 199.99m),
-            "200+" => (200, null),
-            _ => (min, max),
-        };
 }

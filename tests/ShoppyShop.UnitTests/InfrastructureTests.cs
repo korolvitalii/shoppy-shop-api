@@ -46,8 +46,30 @@ public sealed class InfrastructureTests
             ["MinSize"] = 1,
             ["MaxSize"] = 2,
         });
+        template.HasResourceProperties("AWS::SecretsManager::Secret", new Dictionary<string, object>
+        {
+            ["Description"] = "Anthropic API key for the shopping assistant",
+        });
+        template.HasResourceProperties("AWS::AppRunner::Service", new Dictionary<string, object>
+        {
+            ["SourceConfiguration"] = new Dictionary<string, object>
+            {
+                ["ImageRepository"] = new Dictionary<string, object>
+                {
+                    ["ImageConfiguration"] = new Dictionary<string, object>
+                    {
+                        ["RuntimeEnvironmentSecrets"] = Match.ArrayWith(new[]
+                        {
+                            Match.ObjectLike(new Dictionary<string, object>
+                            {
+                                ["Name"] = "Anthropic__ApiKey",
+                            }),
+                        }),
+                    },
+                },
+            },
+        });
     }
-
     [Fact]
     public void FoundationTrustsOnlyTheImmutableMainBranchSubject()
     {
