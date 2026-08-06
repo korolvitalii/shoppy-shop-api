@@ -70,6 +70,14 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task FeatureConfigEndpointReturnsAppSettingsDefaults()
+    {
+        var config = await Client.GetFromJsonAsync<FeatureConfigDto>("/api/feature-config", JsonOptions);
+
+        Assert.True(config!.AssistantEnabled);
+    }
+
+    [Fact]
     public async Task CustomerCanFavoriteAndCreateIdempotentOrder()
     {
         var email = $"customer-{Guid.NewGuid():N}@example.test";
