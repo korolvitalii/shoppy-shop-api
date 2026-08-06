@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Amazon.CDK.Lib" Version="2.261.0" />
+    <PackageVersion Include="Anthropic" Version="12.39.0" />
     <PackageVersion Include="Constructs" Version="10.7.0" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />

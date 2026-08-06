@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 using ShoppyShop.Application;
+using ShoppyShop.Infrastructure.Assistant;
 
 namespace ShoppyShop.Infrastructure;
 
@@ -53,12 +54,15 @@ public static class DependencyInjection
             .AddDefaultTokenProviders();
 
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
+        services.Configure<AnthropicOptions>(configuration.GetSection(AnthropicOptions.SectionName));
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<ICatalogueService, CatalogueService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IFavoritesService, FavoritesService>();
         services.AddScoped<IOrdersService, OrdersService>();
         services.AddScoped<IAdminCatalogueService, AdminCatalogueService>();
+        services.AddSingleton<IAssistantModelClient, AnthropicAssistantModelClient>();
+        services.AddScoped<IAssistantService, AssistantService>();
         return services;
     }
 }

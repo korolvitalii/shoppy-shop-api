@@ -41,6 +41,11 @@ public interface IAdminCatalogueService
     Task DeleteProductAsync(string id, CancellationToken cancellationToken);
 }
 
+public interface IAssistantService
+{
+    Task<AssistantChatResponse> ChatAsync(AssistantChatRequest request, CancellationToken cancellationToken);
+}
+
 public sealed class AppValidationException(string message, IReadOnlyDictionary<string, string[]>? errors = null)
     : Exception(message)
 {
