@@ -1,8 +1,8 @@
 # ShoppyShop API
 
-Production-oriented REST API for the [ShoppyShop Angular storefront](https://github.com/korolvitalii/shoppy-shop).
+REST API for the [ShoppyShop Angular storefront](https://github.com/korolvitalii/shoppy-shop).
 
-The API provides product catalogue, authentication, favourites, checkout, order history, and catalogue administration functionality.
+The API provides catalogue search, a shopping assistant, authentication, favourites, checkout, order history, and catalogue administration.
 
 ## Technology stack
 
@@ -14,6 +14,7 @@ The API provides product catalogue, authentication, favourites, checkout, order 
 * Docker
 * Railway
 * Neon PostgreSQL
+* Anthropic API and .NET SDK
 * xUnit
 * Testcontainers
 * OpenAPI and Scalar
@@ -102,6 +103,19 @@ infra/
 * Product details
 * Soft-delete catalogue administration
 
+### Shopping assistant
+
+* Anthropic-backed conversational product discovery
+* Catalogue-grounded product recommendations
+* Product searches by category, keywords, price, and sort order
+* Category listing through a dedicated model tool
+* Product cards returned alongside assistant replies
+* Conversation history limited to the ten most recent turns
+* Messages limited to 1,000 characters
+* Fixed-window rate limit of 20 requests per IP per hour
+
+The model can use only the `search_products` and `list_categories` tools. Product cards are accepted only when their identifiers came from the current catalogue tool results.
+
 ### Customer functionality
 
 * Persistent favourites
@@ -121,7 +135,7 @@ The application stores only:
 
 * Card brand
 * Last four digits
-* Demo payment token identifier
+* Mock payment token identifier
 
 Full card numbers are never processed or stored.
 
@@ -139,8 +153,9 @@ Full card numbers are never processed or stored.
 ### Requirements
 
 * .NET SDK 10.0.302 or newer
-* Node.js 22 or newer
 * Docker Desktop
+
+Node.js 22 or newer and npm 11 are needed only for the retained AWS CDK tooling and its CI checks.
 
 Restore the local .NET tools:
 
@@ -148,13 +163,13 @@ Restore the local .NET tools:
 dotnet tool restore
 ```
 
-Install the AWS CDK dependencies:
+To work with the retained AWS CDK templates, install their dependencies separately:
 
 ```powershell
 npm ci
 ```
 
-Start PostgreSQL and the required local services:
+Start PostgreSQL:
 
 ```powershell
 docker compose up -d
@@ -216,14 +231,26 @@ Important settings include:
 | `Jwt:SigningKey`             | JWT signing key                           |
 | `Database:AutoMigrate`       | Applies pending migrations during startup |
 | `Cors:AllowedOrigins`        | Permitted frontend origins                |
+| `Anthropic:ApiKey`           | Anthropic API credential                  |
+| `Anthropic:Model`            | Anthropic model used by the assistant     |
+| `Features:AssistantEnabled`  | Controls assistant visibility in the UI   |
+
+To use the shopping assistant locally, store the Anthropic credential outside source control:
+
+```powershell
+dotnet user-secrets set `
+  "Anthropic:ApiKey" `
+  "<your-api-key>" `
+  --project src/ShoppyShop.Api
+```
+
+The default model is configured in `src/ShoppyShop.Api/appsettings.json`. It can be overridden with `Anthropic:Model` or the `Anthropic__Model` environment variable.
 
 ### Local bootstrap administrator
 
-An optional administrator can be created during local development using .NET user secrets:
+An optional administrator can be created during local development using .NET user secrets. The API project already defines its user-secrets identifier:
 
 ```powershell
-dotnet user-secrets init --project src/ShoppyShop.Api
-
 dotnet user-secrets set `
   "BootstrapAdmin:Email" `
   "admin@example.test" `
@@ -289,7 +316,7 @@ dotnet test ShoppyShop.slnx
 
 ### Unit tests
 
-`ShoppyShop.UnitTests` verifies isolated domain and application behaviour without external infrastructure.
+`ShoppyShop.UnitTests` verifies service behaviour, assistant orchestration, persistence rules using SQLite, and infrastructure configuration without starting external services.
 
 ### Integration tests
 
@@ -316,7 +343,7 @@ The pipeline performs:
 3. Unit and integration tests
 4. `dotnet format` verification
 5. NuGet vulnerability audit
-6. Legacy AWS CDK synthesis
+6. Retained AWS CDK template synthesis
 7. Container image build
 8. Trivy container image scan
 
@@ -349,6 +376,14 @@ The production deployment consists of:
 
 Railway checks `/health/ready` during deployment. The application reads Railway's dynamic `PORT` environment variable and applies pending Entity Framework Core migrations at startup.
 
+The production assistant configuration is stored in Railway using:
+
+```text
+Anthropic__ApiKey
+Anthropic__Model
+Features__AssistantEnabled
+```
+
 ## Continuous deployment
 
 The deployment workflow is defined in:
@@ -370,11 +405,13 @@ Configure the following GitHub Actions values before enabling deployment:
 
 Production application secrets remain in Railway and are not copied into GitHub Actions.
 
-## Cost controls
+## Infrastructure notes
 
-The portfolio deployment uses Railway and Neon's usage-based/free allowances instead of dedicated AWS App Runner and RDS resources. Railway usage limits and Neon project quotas should still be monitored because free allowances and provider pricing can change.
+The running API uses Railway and Neon. The application no longer depends on AWS App Runner or Amazon RDS.
 
-The API and database remain single-region services without multi-region failover. These are deliberate cost and complexity trade-offs rather than production-scale availability choices.
+The `infra/ShoppyShop.Cdk` project is retained in the repository and synthesized in CI, but it is not used by the current Railway deployment.
+
+Railway usage and Neon quotas should be monitored in their provider dashboards. The API and database are single-region services without multi-region failover.
 
 ## Related project
 
