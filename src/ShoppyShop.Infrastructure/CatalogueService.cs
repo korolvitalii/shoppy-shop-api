@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 using Microsoft.EntityFrameworkCore;
 
 using ShoppyShop.Application;
@@ -62,11 +64,25 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
-            var search = query.Search.Trim();
-            products = products.Where(x =>
-                EF.Functions.ILike(x.Name, $"%{search}%") ||
-                EF.Functions.ILike(x.Brand, $"%{search}%") ||
-                EF.Functions.ILike(x.Description, $"%{search}%"));
+            var terms = Regex.Split(query.Search.Trim(), @"[^\p{L}\p{N}]+")
+                .Where(term => term.Length > 0)
+                .Select(NormalizeSearchTerm)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            foreach (var term in terms)
+            {
+                var pattern = $"%{term}%";
+                products = dbContext.Database.IsNpgsql()
+                    ? products.Where(x =>
+                        EF.Functions.ILike(x.Name, pattern) ||
+                        EF.Functions.ILike(x.Brand, pattern) ||
+                        EF.Functions.ILike(x.Description, pattern))
+                    : products.Where(x =>
+                        EF.Functions.Like(x.Name, pattern) ||
+                        EF.Functions.Like(x.Brand, pattern) ||
+                        EF.Functions.Like(x.Description, pattern));
+            }
         }
 
         if (query.MinPrice is not null)
@@ -89,6 +105,9 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
 
         return await products.AsNoTracking().Select(ProductProjection).ToArrayAsync(cancellationToken);
     }
+
+    private static string NormalizeSearchTerm(string term) =>
+        term.Length > 3 && term.EndsWith('s') ? term[..^1] : term;
 
     private static System.Linq.Expressions.Expression<Func<Product, ProductDto>> ProductProjection => product =>
         new ProductDto(

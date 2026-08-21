@@ -80,6 +80,51 @@ public sealed class AssistantServiceTests
     }
 
     [Fact]
+    public async Task ChatAsyncSearchProductsFiltersByCategoryId()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        fixture.DbContext.ProductGroups.AddRange(
+            Group("beauty", "Beauty"),
+            Group("electronics", "Electronics"));
+        fixture.DbContext.Products.AddRange(
+            Product("beauty-product", "beauty"),
+            Product("electronics-product", "electronics"));
+        fixture.DbContext.SaveChanges();
+        var model = new FakeAssistantModelClient(
+            new AssistantModelTurn(
+                [],
+                [new AssistantToolUseBlock("tool-1", "search_products", ToolInput(new { groupId = "electronics" }))]),
+            new AssistantModelTurn([new AssistantTextBlock("Here are the electronics.\nRECOMMENDED_IDS: electronics-product")], []));
+        var service = CreateService(model, fixture.DbContext);
+
+        var response = await service.ChatAsync(new AssistantChatRequest("I am looking for electronics"), CancellationToken.None);
+
+        Assert.Equal(["electronics-product"], response.Products.Select(product => product.Id));
+    }
+
+    [Fact]
+    public async Task ChatAsyncListCategoriesReturnsCatalogueGroupsToModel()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        fixture.DbContext.ProductGroups.AddRange(
+            Group("beauty", "Beauty"),
+            Group("electronics", "Electronics"));
+        fixture.DbContext.Products.Add(Product("electronics-product", "electronics"));
+        fixture.DbContext.SaveChanges();
+        var model = new FakeAssistantModelClient(
+            new AssistantModelTurn([], [new AssistantToolUseBlock("tool-1", "list_categories", ToolInput(new { }))]),
+            new AssistantModelTurn([new AssistantTextBlock("We have Beauty and Electronics.")], []));
+        var service = CreateService(model, fixture.DbContext);
+
+        var response = await service.ChatAsync(new AssistantChatRequest("show categories"), CancellationToken.None);
+
+        Assert.Empty(response.Products);
+        var toolResult = Assert.IsType<AssistantToolResultBlock>(Assert.Single(model.Calls[1][2].Content));
+        Assert.Contains("electronics", toolResult.Content, StringComparison.Ordinal);
+        Assert.Contains("productCount", toolResult.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ChatAsyncStopsAfterIterationCapAndReturnsGracefulFallback()
     {
         using var fixture = new SqliteAppDbContextFixture();
@@ -206,10 +251,20 @@ public sealed class AssistantServiceTests
         dbContext.SaveChanges();
     }
 
-    private static Product Product(string id, decimal price = 25m) => new()
+    private static ProductGroup Group(string id, string name) => new()
     {
         Id = id,
-        GroupId = "group",
+        Name = name,
+        Description = $"{name} products",
+        ImageUrl = "/g.jpg",
+    };
+
+    private static Product Product(string id, decimal price = 25m) => Product(id, "group", price);
+
+    private static Product Product(string id, string groupId, decimal price = 25m) => new()
+    {
+        Id = id,
+        GroupId = groupId,
         Name = id,
         Brand = "Test brand",
         Description = "Test description",

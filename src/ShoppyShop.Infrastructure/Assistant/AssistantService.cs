@@ -57,22 +57,29 @@ public sealed class AssistantService(
             var toolResults = new List<AssistantContentBlock>();
             foreach (var toolUse in turn.ToolUseBlocks)
             {
-                if (!string.Equals(toolUse.Name, "search_products", StringComparison.Ordinal))
+                if (string.Equals(toolUse.Name, "search_products", StringComparison.Ordinal))
                 {
-                    toolResults.Add(new AssistantToolResultBlock(
-                        toolUse.Id,
-                        JsonSerializer.Serialize(new { error = $"Unknown tool '{toolUse.Name}'." }),
-                        IsError: true));
+                    var (resultJson, products, isError) = await ExecuteSearchProductsAsync(toolUse.Input, cancellationToken);
+                    foreach (var product in products)
+                    {
+                        seenProducts.TryAdd(product.Id, product);
+                    }
+
+                    toolResults.Add(new AssistantToolResultBlock(toolUse.Id, resultJson, isError));
                     continue;
                 }
 
-                var (resultJson, products, isError) = await ExecuteSearchProductsAsync(toolUse.Input, cancellationToken);
-                foreach (var product in products)
+                if (string.Equals(toolUse.Name, "list_categories", StringComparison.Ordinal))
                 {
-                    seenProducts.TryAdd(product.Id, product);
+                    var resultJson = await ExecuteListCategoriesAsync(cancellationToken);
+                    toolResults.Add(new AssistantToolResultBlock(toolUse.Id, resultJson, IsError: false));
+                    continue;
                 }
 
-                toolResults.Add(new AssistantToolResultBlock(toolUse.Id, resultJson, isError));
+                toolResults.Add(new AssistantToolResultBlock(
+                    toolUse.Id,
+                    JsonSerializer.Serialize(new { error = $"Unknown tool '{toolUse.Name}'." }),
+                    IsError: true));
             }
 
             messages.Add(new AssistantModelMessage("user", toolResults));
@@ -87,19 +94,24 @@ public sealed class AssistantService(
     {
         if (!TryGetOptionalString(input, "search", out var search) ||
             !TryGetOptionalString(input, "sort", out var sort) ||
-            !TryGetOptionalString(input, "price", out var price))
+            !TryGetOptionalString(input, "price", out var price) ||
+            !TryGetOptionalString(input, "groupId", out var groupId))
         {
             return (JsonSerializer.Serialize(new { error = "Tool arguments must be strings." }), [], true);
         }
 
         var (min, max) = PricePresets.Resolve(price, null, null);
+        var query = new ProductQuery(search, sort, min, max);
 
-        var products = await catalogueService.GetProductsAsync(new ProductQuery(search, sort, min, max), cancellationToken);
+        var products = string.IsNullOrWhiteSpace(groupId)
+            ? await catalogueService.GetProductsAsync(query, cancellationToken)
+            : await catalogueService.GetGroupProductsAsync(groupId, query, cancellationToken);
         var capped = products.Take(MaxProductsReturned).ToList();
 
         var trimmed = capped.Select(p => new
         {
             id = p.Id,
+            groupId = p.GroupId,
             name = p.Name,
             brand = p.Brand,
             price = p.Price,
@@ -107,6 +119,19 @@ public sealed class AssistantService(
             inStock = p.InStock,
         });
         return (JsonSerializer.Serialize(trimmed), capped, false);
+    }
+
+    private async Task<string> ExecuteListCategoriesAsync(CancellationToken cancellationToken)
+    {
+        var groups = await catalogueService.GetGroupsAsync(includeDeleted: false, cancellationToken);
+        var trimmed = groups.Select(group => new
+        {
+            id = group.Id,
+            name = group.Name,
+            description = group.Description,
+            productCount = group.ItemCount,
+        });
+        return JsonSerializer.Serialize(trimmed);
     }
 
     private static AssistantChatResponse ExtractResponse(string replyText, Dictionary<string, ProductDto> seenProducts)
