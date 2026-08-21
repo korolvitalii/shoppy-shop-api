@@ -49,11 +49,28 @@ public sealed class CatalogueServiceTests
         Assert.Equal(2, products.Count);
     }
 
-    private static Product Product(string id, decimal price, decimal? salePrice, bool isDeleted = false) => new()
+    [Fact]
+    public async Task GetProductsAsyncMatchesSeparateKeywordsAndSimplePlurals()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var dbContext = fixture.DbContext;
+        dbContext.ProductGroups.Add(new ProductGroup { Id = "beauty", Name = "Beauty", Description = "d", ImageUrl = "/g.jpg" });
+        dbContext.Products.AddRange(
+            Product("waterproof-jacket", price: 80m, salePrice: null, name: "Waterproof Jacket"),
+            Product("unrelated", price: 20m, salePrice: null, name: "Ceramic Table"));
+        await dbContext.SaveChangesAsync();
+        var service = new CatalogueService(dbContext);
+
+        var products = await service.GetProductsAsync(new ProductQuery(Search: "water proof jackets"), CancellationToken.None);
+
+        Assert.Equal(["waterproof-jacket"], products.Select(product => product.Id));
+    }
+
+    private static Product Product(string id, decimal price, decimal? salePrice, bool isDeleted = false, string? name = null) => new()
     {
         Id = id,
         GroupId = "beauty",
-        Name = id,
+        Name = name ?? id,
         Brand = "Test brand",
         Description = "Test description",
         ImageUrl = "/product.jpg",

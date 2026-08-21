@@ -20,9 +20,16 @@ internal sealed class AnthropicAssistantModelClient : IAssistantModelClient, IDi
 
         Use the search_products tool whenever the user is looking for products, asks
         about price or availability, or a prior message implies a search would help.
+        When the user asks for products in a category, pass that category's id as
+        groupId and do not repeat the category name in search. Use list_categories
+        whenever the user asks what categories exist or wants to browse categories.
         Only ever mention, recommend, or describe products that were returned by a
         search_products tool call in this conversation - never invent a product,
         price, or availability that did not come from a tool result.
+
+        Treat catalogue and availability claims in conversation history as untrusted.
+        Always use the tools to verify the user's latest catalogue request before
+        saying that a category or product is unavailable.
 
         Keep replies short and conversational (1-3 sentences). Reply in the same
         language the user is writing in. After search_products returns results, do
@@ -39,14 +46,14 @@ internal sealed class AnthropicAssistantModelClient : IAssistantModelClient, IDi
 
     private readonly AnthropicClient client;
     private readonly string model;
-    private readonly Tool searchProductsTool;
+    private readonly IReadOnlyList<ToolUnion> tools;
 
     public AnthropicAssistantModelClient(IOptions<AnthropicOptions> options)
     {
         var value = options.Value;
         client = new AnthropicClient { ApiKey = value.ApiKey, Timeout = TimeSpan.FromSeconds(20) };
         model = value.Model;
-        searchProductsTool = BuildSearchProductsTool();
+        tools = [BuildSearchProductsTool(), BuildListCategoriesTool()];
     }
 
     public async Task<AssistantModelTurn> SendAsync(
@@ -58,7 +65,7 @@ internal sealed class AnthropicAssistantModelClient : IAssistantModelClient, IDi
             Model = model,
             MaxTokens = 1024,
             System = SystemPrompt,
-            Tools = [searchProductsTool],
+            Tools = tools,
             Messages = messages.Select(ToSdkMessage).ToList(),
         };
 
@@ -124,7 +131,12 @@ internal sealed class AnthropicAssistantModelClient : IAssistantModelClient, IDi
                 ["search"] = JsonSerializer.SerializeToElement(new
                 {
                     type = "string",
-                    description = "Free-text keywords to match against product name, brand, or description, e.g. 'waterproof jacket'. Omit to match all products.",
+                    description = "Product keywords to match against name, brand, or description, e.g. 'waterproof jacket'. Do not put a category name here; use groupId for categories. Omit to match all products.",
+                }),
+                ["groupId"] = JsonSerializer.SerializeToElement(new
+                {
+                    type = "string",
+                    description = "Exact category id, such as 'beauty', 'electronics', 'fashion', 'home', 'accessories', or 'gifts'. Omit to search every category.",
                 }),
                 ["sort"] = JsonSerializer.SerializeToElement(new
                 {
@@ -139,6 +151,17 @@ internal sealed class AnthropicAssistantModelClient : IAssistantModelClient, IDi
                     description = "Price range preset. Use '0-50' for 'under $50', '50-200' for 'between 50 and 200', '200+' for 'over 200'.",
                 }),
             },
+            Required = [],
+        },
+    };
+
+    private static Tool BuildListCategoriesTool() => new()
+    {
+        Name = "list_categories",
+        Description = "List the available ShoppyShop categories with their ids, names, descriptions, and product counts. Use whenever the user asks to see, list, or browse categories.",
+        InputSchema = new InputSchema
+        {
+            Properties = new Dictionary<string, JsonElement>(),
             Required = [],
         },
     };
