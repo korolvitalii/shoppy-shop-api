@@ -7,15 +7,10 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: production-api
   cancel-in-progress: false
-
-env:
-  AWS_REGION: eu-central-1
-  ECR_REPOSITORY: shoppy-shop-api
 
 jobs:
   deploy:
@@ -37,27 +32,12 @@ jobs:
           dotnet restore ShoppyShop.slnx --locked-mode
           dotnet build ShoppyShop.slnx -c Release --no-restore
           dotnet test ShoppyShop.slnx -c Release --no-build
-      - uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-      - id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-      - name: Build and push image
+      - name: Deploy to Railway
         env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker build --tag "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
-          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-      - name: Deploy application stack
-        env:
-          NOTIFICATION_EMAIL: ${{ vars.BUDGET_NOTIFICATION_EMAIL }}
-          ADMIN_EMAIL: ${{ vars.ADMIN_EMAIL }}
-          IMAGE_TAG: ${{ github.sha }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: >-
-          npx cdk deploy ShoppyShopApi
-          --require-approval never
-          -c notificationEmail="$NOTIFICATION_EMAIL"
-          -c adminEmail="$ADMIN_EMAIL"
-          -c imageTag="$IMAGE_TAG"
+          npx --yes @railway/cli@latest up
+          --ci
+          --project "${{ vars.RAILWAY_PROJECT_ID }}"
+          --environment "${{ vars.RAILWAY_ENVIRONMENT_ID }}"
+          --service "${{ vars.RAILWAY_SERVICE_ID }}"

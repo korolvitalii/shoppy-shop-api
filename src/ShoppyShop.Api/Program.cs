@@ -16,12 +16,18 @@ using ShoppyShop.Infrastructure;
 
 if (args.Contains("--healthcheck", StringComparer.Ordinal))
 {
+    var healthPort = Environment.GetEnvironmentVariable("PORT") ?? "8080";
     using var healthClient = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
-    using var healthResponse = await healthClient.GetAsync("http://localhost:8080/health/live");
+    using var healthResponse = await healthClient.GetAsync($"http://localhost:{healthPort}/health/live");
     return healthResponse.IsSuccessStatusCode ? 0 : 1;
 }
 
 var builder = WebApplication.CreateBuilder(args);
+var platformPort = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(platformPort))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{platformPort}");
+}
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()

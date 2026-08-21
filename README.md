@@ -12,7 +12,8 @@ The API provides product catalogue, authentication, favourites, checkout, order 
 * PostgreSQL 17
 * JWT authentication
 * Docker
-* AWS CDK
+* Railway
+* Neon PostgreSQL
 * xUnit
 * Testcontainers
 * OpenAPI and Scalar
@@ -234,9 +235,7 @@ dotnet user-secrets set `
   --project src/ShoppyShop.Api
 ```
 
-In AWS, the JWT signing key and bootstrap administrator password are generated and stored in AWS Secrets Manager.
-
-They are not stored in source control or CI environment variables.
+In production, the database connection string, JWT signing key, bootstrap administrator password, and external API keys are stored as encrypted Railway service variables. They are not stored in source control.
 
 ## Database migrations
 
@@ -317,7 +316,7 @@ The pipeline performs:
 3. Unit and integration tests
 4. `dotnet format` verification
 5. NuGet vulnerability audit
-6. AWS CDK synthesis
+6. Legacy AWS CDK synthesis
 7. Container image build
 8. Trivy container image scan
 
@@ -341,64 +340,14 @@ Postman environment:
 
 ## Deployment architecture
 
-Target AWS region:
+The production deployment consists of:
 
-```text
-eu-central-1
-```
+* Railway running the Dockerized ASP.NET Core API
+* Neon PostgreSQL in the Frankfurt AWS region
+* Railway encrypted service variables for production secrets
+* GitHub Actions for continuous deployment
 
-The deployed infrastructure consists of:
-
-* Amazon ECR
-* AWS App Runner
-* Private Amazon RDS PostgreSQL
-* AWS Secrets Manager
-* AWS Budgets
-* GitHub Actions
-* AWS IAM OIDC integration
-
-## Initial AWS foundation
-
-The foundation stack creates:
-
-* An Amazon ECR repository
-* A GitHub OIDC deployment role restricted to the `main` branch
-* Budget-notification configuration
-
-It does not deploy the API or database.
-
-Authenticate through AWS IAM Identity Center:
-
-```powershell
-$env:AWS_PROFILE = "shoppy-shop"
-$env:AWS_REGION = "eu-central-1"
-
-aws sso login --profile shoppy-shop
-```
-
-Bootstrap the AWS CDK environment:
-
-```powershell
-npx cdk bootstrap `
-  aws://<account-id>/eu-central-1 `
-  --profile shoppy-shop `
-  -c notificationEmail=you@example.com
-```
-
-Deploy the foundation stack:
-
-```powershell
-npx cdk deploy ShoppyShopFoundation `
-  --profile shoppy-shop `
-  -c notificationEmail=you@example.com
-```
-
-After deployment:
-
-1. Copy the `GitHubDeployRoleArn` stack output.
-2. Add it as the `AWS_DEPLOY_ROLE_ARN` GitHub repository variable.
-3. Add `BUDGET_NOTIFICATION_EMAIL`.
-4. Add `ADMIN_EMAIL`.
+Railway checks `/health/ready` during deployment. The application reads Railway's dynamic `PORT` environment variable and applies pending Entity Framework Core migrations at startup.
 
 ## Continuous deployment
 
@@ -408,43 +357,24 @@ The deployment workflow is defined in:
 .github/workflows/deploy.yml
 ```
 
-Every push to `main`:
+Every push to `main` builds and tests the solution, then deploys the repository to the Railway production service.
 
-1. Builds the solution
-2. Runs the automated tests
-3. Builds the API container image
-4. Tags the image with the Git commit SHA
-5. Pushes the image to Amazon ECR
-6. Synthesizes the AWS CDK application
-7. Deploys the `ShoppyShopApi` stack
+Configure the following GitHub Actions values before enabling deployment:
 
-The deployed stack contains:
+| Type       | Name                     | Value                                  |
+| ---------- | ------------------------ | -------------------------------------- |
+| Secret     | `RAILWAY_TOKEN`          | Railway project deployment token       |
+| Variable   | `RAILWAY_PROJECT_ID`     | Railway project identifier             |
+| Variable   | `RAILWAY_ENVIRONMENT_ID` | Railway production environment ID      |
+| Variable   | `RAILWAY_SERVICE_ID`     | Railway API service identifier         |
 
-* AWS App Runner
-* Private Single-AZ Amazon RDS PostgreSQL
-* AWS Secrets Manager resources
-
-GitHub Actions authenticates to AWS through OpenID Connect.
-
-No long-lived AWS access keys are stored in GitHub.
+Production application secrets remain in Railway and are not copied into GitHub Actions.
 
 ## Cost controls
 
-An AWS Budget is configured with a monthly threshold of **$35**.
+The portfolio deployment uses Railway and Neon's usage-based/free allowances instead of dedicated AWS App Runner and RDS resources. Railway usage limits and Neon project quotas should still be monitored because free allowances and provider pricing can change.
 
-The budget sends notifications when estimated or actual spending approaches the configured thresholds.
-
-AWS Budgets provides monitoring and alerts; it does not automatically prevent spending from exceeding $35.
-
-The infrastructure intentionally uses:
-
-* A Single-AZ RDS database
-* One AWS region
-* A small portfolio-project deployment
-* No Multi-AZ standby
-* No multi-region failover
-
-These are deliberate cost and complexity trade-offs rather than production-scale availability choices.
+The API and database remain single-region services without multi-region failover. These are deliberate cost and complexity trade-offs rather than production-scale availability choices.
 
 ## Related project
 
