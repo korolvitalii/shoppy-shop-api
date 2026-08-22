@@ -21,6 +21,6 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "aws-cdk": "2.1132.0"
+    "aws-cdk": "2.1137.0"
   }
 }
