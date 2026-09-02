@@ -73,7 +73,8 @@ public sealed class AuthService(
     {
         var now = timeProvider.GetUtcNow();
         var tokenHash = HashToken(refreshToken);
-        var session = await dbContext.RefreshSessions.SingleOrDefaultAsync(x => x.TokenHash == tokenHash, cancellationToken);
+        var session = await dbContext.RefreshSessions.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.TokenHash == tokenHash, cancellationToken);
 
         if (session is null)
         {
@@ -82,9 +83,7 @@ public sealed class AuthService(
 
         if (session.RevokedAt is not null)
         {
-            await dbContext.RefreshSessions
-                .Where(x => x.UserId == session.UserId && x.RevokedAt == null)
-                .ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, now), cancellationToken);
+            await RevokeFamilyAsync(session.UserId, now, cancellationToken);
             throw new AppUnauthorizedException("Refresh token reuse was detected. Please sign in again.");
         }
 
@@ -93,11 +92,25 @@ public sealed class AuthService(
             throw new AppUnauthorizedException("Refresh token has expired.");
         }
 
+        // Claim the token with a conditional update rather than a tracked mutation: only the
+        // request that actually flips RevokedAt from null may rotate it. Without this, two
+        // concurrent refreshes of the same token both pass the check above and both mint a
+        // session, which is exactly the case reuse detection exists to catch.
+        var replacementId = Guid.NewGuid();
+        var claimed = await dbContext.RefreshSessions
+            .Where(x => x.Id == session.Id && x.RevokedAt == null)
+            .ExecuteUpdateAsync(
+                x => x.SetProperty(s => s.RevokedAt, now).SetProperty(s => s.ReplacedById, replacementId),
+                cancellationToken);
+
+        if (claimed == 0)
+        {
+            await RevokeFamilyAsync(session.UserId, now, cancellationToken);
+            throw new AppUnauthorizedException("Refresh token reuse was detected. Please sign in again.");
+        }
+
         var user = await userManager.FindByIdAsync(session.UserId.ToString())
             ?? throw new AppUnauthorizedException("User no longer exists.");
-        var replacementId = Guid.NewGuid();
-        session.RevokedAt = now;
-        session.ReplacedById = replacementId;
         return await CreateSessionAsync(user, cancellationToken, replacementId);
     }
 
@@ -125,13 +138,21 @@ public sealed class AuthService(
 
     public async Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken cancellationToken)
     {
-        var user = await userManager.FindByIdAsync(userId.ToString())
-            ?? throw new AppNotFoundException("User was not found.");
-        var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
-        ThrowIfIdentityFailed(result);
-        await dbContext.RefreshSessions
-            .Where(x => x.UserId == userId && x.RevokedAt == null)
-            .ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, timeProvider.GetUtcNow()), cancellationToken);
+        // Both writes belong to one decision: if the revocation fails after the hash is
+        // persisted, the password has changed while every existing session stays valid.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async ct =>
+        {
+            dbContext.ChangeTracker.Clear();
+            var user = await userManager.FindByIdAsync(userId.ToString())
+                ?? throw new AppNotFoundException("User was not found.");
+
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
+            ThrowIfIdentityFailed(result);
+            await RevokeFamilyAsync(userId, timeProvider.GetUtcNow(), ct);
+            await transaction.CommitAsync(ct);
+        }, cancellationToken);
     }
 
     private async Task<AuthResult> CreateSessionAsync(
@@ -175,6 +196,11 @@ public sealed class AuthService(
 
     private async Task<UserDto> MapUserAsync(AppUser user) =>
         new(user.Id, user.Email ?? string.Empty, user.DisplayName, [.. await userManager.GetRolesAsync(user)]);
+
+    private Task<int> RevokeFamilyAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken) =>
+        dbContext.RefreshSessions
+            .Where(x => x.UserId == userId && x.RevokedAt == null)
+            .ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, now), cancellationToken);
 
     private static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
