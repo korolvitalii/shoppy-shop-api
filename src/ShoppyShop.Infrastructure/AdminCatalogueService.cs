@@ -40,13 +40,25 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
 
     public async Task DeleteGroupAsync(string id, CancellationToken cancellationToken)
     {
-        var group = await dbContext.ProductGroups.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
-            ?? throw new AppNotFoundException("Product group was not found.");
-        group.IsDeleted = true;
-        await dbContext.Products.IgnoreQueryFilters()
-            .Where(x => x.GroupId == id)
-            .ExecuteUpdateAsync(x => x.SetProperty(p => p.IsDeleted, true), cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        // ExecuteUpdateAsync commits on its own the moment it is awaited, so without an
+        // explicit transaction the products and the group would be soft-deleted in two
+        // independent commits — a failure between them leaves a live group with no
+        // visible products, and nothing repairs that state.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async ct =>
+        {
+            dbContext.ChangeTracker.Clear();
+            var group = await dbContext.ProductGroups.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == id, ct)
+                ?? throw new AppNotFoundException("Product group was not found.");
+
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            group.IsDeleted = true;
+            await dbContext.Products.IgnoreQueryFilters()
+                .Where(x => x.GroupId == id)
+                .ExecuteUpdateAsync(x => x.SetProperty(p => p.IsDeleted, true), ct);
+            await dbContext.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }, cancellationToken);
     }
 
     public async Task<ProductDto> UpsertProductAsync(
