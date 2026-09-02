@@ -41,8 +41,28 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
         CancellationToken cancellationToken)
     {
         Validate(request, idempotencyKey);
-        var now = timeProvider.GetUtcNow();
         var requestHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request)));
+
+        // Serializable isolation does not block: Postgres aborts one side of a concurrent
+        // order with SQLSTATE 40001 and expects the caller to retry. The execution strategy
+        // supplies that retry, but it re-runs this delegate from the top, so the change
+        // tracker is cleared first to drop entities a failed attempt left behind.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async ct =>
+        {
+            dbContext.ChangeTracker.Clear();
+            return await CreateOrderAsync(userId, idempotencyKey, request, requestHash, ct);
+        }, cancellationToken);
+    }
+
+    private async Task<OrderDto> CreateOrderAsync(
+        Guid userId,
+        string idempotencyKey,
+        CreateOrderRequest request,
+        string requestHash,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var previous = await dbContext.OrderRequests.IgnoreQueryFilters()
@@ -51,14 +71,7 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
 
         if (previous is not null && previous.ExpiresAt > now)
         {
-            if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.ASCII.GetBytes(previous.RequestHash),
-                Encoding.ASCII.GetBytes(requestHash)))
-            {
-                throw new AppConflictException("This idempotency key was already used with a different order.");
-            }
-
-            return MapOrder(previous.Order!);
+            return ReplayOrder(previous, requestHash);
         }
 
         if (previous is not null)
@@ -71,7 +84,9 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
             .GroupBy(x => x.ProductId, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Sum(item => item.Quantity), StringComparer.Ordinal);
         var productIds = quantities.Keys.ToArray();
-        var products = await dbContext.Products.Where(x => productIds.Contains(x.Id)).ToArrayAsync(cancellationToken);
+        var products = await dbContext.Products.AsNoTracking()
+            .Where(x => productIds.Contains(x.Id))
+            .ToArrayAsync(cancellationToken);
         if (products.Length != productIds.Length)
         {
             throw new AppUnprocessableException("One or more products do not exist.");
@@ -128,9 +143,43 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
             OrderId = order.Id,
             ExpiresAt = now.AddHours(24),
         });
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // A concurrent request claimed this idempotency key first and won the race on
+            // the OrderRequests primary key. Its order is the canonical result for this key,
+            // so replay that rather than surfacing a unique-violation as a 500.
+            await transaction.RollbackAsync(cancellationToken);
+            dbContext.ChangeTracker.Clear();
+            var winner = await dbContext.OrderRequests.AsNoTracking().IgnoreQueryFilters()
+                .Include(x => x.Order!).ThenInclude(x => x.Lines)
+                .SingleOrDefaultAsync(x => x.UserId == userId && x.Key == idempotencyKey, cancellationToken);
+
+            if (winner?.Order is null)
+            {
+                throw;
+            }
+
+            return ReplayOrder(winner, requestHash);
+        }
+
         await transaction.CommitAsync(cancellationToken);
         return MapOrder(order);
+    }
+
+    private static OrderDto ReplayOrder(OrderRequest previous, string requestHash)
+    {
+        if (!CryptographicOperations.FixedTimeEquals(
+            Encoding.ASCII.GetBytes(previous.RequestHash),
+            Encoding.ASCII.GetBytes(requestHash)))
+        {
+            throw new AppConflictException("This idempotency key was already used with a different order.");
+        }
+
+        return MapOrder(previous.Order!);
     }
 
     private static void Validate(CreateOrderRequest request, string idempotencyKey)

@@ -38,7 +38,9 @@ public static class DependencyInjection
             }.ConnectionString;
         }
 
-        services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddDbContext<AppDbContext>(options => options.UseNpgsql(
+            connectionString,
+            npgsql => npgsql.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(2), errorCodesToAdd: null)));
         services.AddIdentityCore<AppUser>(options =>
             {
                 options.User.RequireUniqueEmail = true;
