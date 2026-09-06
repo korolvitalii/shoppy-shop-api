@@ -34,11 +34,15 @@ public static class ApiEndpoints
             string? price,
             decimal? minPrice,
             decimal? maxPrice,
+            string? cursor,
+            int? limit,
             ICatalogueService service,
             CancellationToken cancellationToken) =>
         {
             (minPrice, maxPrice) = PricePresets.Resolve(price, minPrice, maxPrice);
-            return service.GetProductsAsync(new ProductQuery(search, sort, minPrice, maxPrice), cancellationToken);
+            return service.GetProductsAsync(
+                new ProductQuery(search, sort, minPrice, maxPrice, Cursor: cursor, Limit: limit),
+                cancellationToken);
         });
 
         api.MapGet("/product-groups/{groupId}/products", (
@@ -48,11 +52,16 @@ public static class ApiEndpoints
             string? price,
             decimal? minPrice,
             decimal? maxPrice,
+            string? cursor,
+            int? limit,
             ICatalogueService service,
             CancellationToken cancellationToken) =>
         {
             (minPrice, maxPrice) = PricePresets.Resolve(price, minPrice, maxPrice);
-            return service.GetGroupProductsAsync(groupId, new ProductQuery(search, sort, minPrice, maxPrice), cancellationToken);
+            return service.GetGroupProductsAsync(
+                groupId,
+                new ProductQuery(search, sort, minPrice, maxPrice, Cursor: cursor, Limit: limit),
+                cancellationToken);
         });
 
         api.MapGet("/product-groups/{groupId}/products/{productId}", async (
@@ -198,8 +207,18 @@ public static class ApiEndpoints
     {
         admin.MapGet("/product-groups", (ICatalogueService service, CancellationToken cancellationToken) =>
             service.GetGroupsAsync(true, cancellationToken));
-        admin.MapGet("/products", (ICatalogueService service, CancellationToken cancellationToken) =>
-            service.GetProductsAsync(new ProductQuery(IncludeDeleted: true), cancellationToken));
+        // Soft-deleted rows are never removed, so this list is strictly larger than the public one
+        // and only ever grows — it needs paging more than the storefront does, not less.
+        admin.MapGet("/products", (
+            string? search,
+            string? sort,
+            string? cursor,
+            int? limit,
+            ICatalogueService service,
+            CancellationToken cancellationToken) =>
+            service.GetProductsAsync(
+                new ProductQuery(search, sort, IncludeDeleted: true, Cursor: cursor, Limit: limit),
+                cancellationToken));
         admin.MapPut("/product-groups/{id}", (string id, ProductGroupWriteRequest request, IAdminCatalogueService service, CancellationToken cancellationToken) =>
             service.UpsertGroupAsync(id, request, cancellationToken));
         admin.MapDelete("/product-groups/{id}", async (string id, IAdminCatalogueService service, CancellationToken cancellationToken) =>

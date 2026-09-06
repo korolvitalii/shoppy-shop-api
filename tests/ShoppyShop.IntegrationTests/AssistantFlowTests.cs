@@ -42,8 +42,8 @@ public sealed class AssistantFlowTests : IAsyncLifetime, IDisposable
     public async Task AssistantChatSearchesRealCatalogueAndReturnsRecommendedProducts()
     {
         CreateFactory(_ => new StubAssistantModelClient());
-        var underFifty = await Client.GetFromJsonAsync<ProductDto[]>("/api/products?price=0-50", JsonOptions);
-        var recommendedId = underFifty!.First().Id;
+        var underFifty = await Client.GetFromJsonAsync<ProductPageDto>("/api/products?price=0-50", JsonOptions);
+        var recommendedId = underFifty!.Items.First().Id;
 
         var model = new QueuedAssistantModelClient(
             new AssistantModelTurn(
