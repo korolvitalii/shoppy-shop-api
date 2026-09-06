@@ -256,16 +256,16 @@ public sealed class CatalogueServiceTests
         bool isDeleted = false,
         string? name = null,
         string groupId = "beauty") => new()
-    {
-        Id = id,
-        GroupId = groupId,
-        Name = name ?? id,
-        Brand = "Test brand",
-        Description = "Test description",
-        ImageUrl = "/product.jpg",
-        Price = price,
-        SalePrice = salePrice,
-        InStock = true,
-        IsDeleted = isDeleted,
-    };
+        {
+            Id = id,
+            GroupId = groupId,
+            Name = name ?? id,
+            Brand = "Test brand",
+            Description = "Test description",
+            ImageUrl = "/product.jpg",
+            Price = price,
+            SalePrice = salePrice,
+            InStock = true,
+            IsDeleted = isDeleted,
+        };
 }
