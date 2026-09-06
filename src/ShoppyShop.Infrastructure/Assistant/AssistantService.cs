@@ -101,12 +101,14 @@ public sealed class AssistantService(
         }
 
         var (min, max) = PricePresets.Resolve(price, null, null);
-        var query = new ProductQuery(search, sort, min, max);
+        // The cap is now pushed into the query rather than applied to a fully materialized list, so
+        // a broad tool search reads six rows out of the database instead of the whole catalogue.
+        var query = new ProductQuery(search, sort, min, max, Limit: MaxProductsReturned);
 
-        var products = string.IsNullOrWhiteSpace(groupId)
+        var page = string.IsNullOrWhiteSpace(groupId)
             ? await catalogueService.GetProductsAsync(query, cancellationToken)
             : await catalogueService.GetGroupProductsAsync(groupId, query, cancellationToken);
-        var capped = products.Take(MaxProductsReturned).ToList();
+        var capped = page.Items.ToList();
 
         var trimmed = capped.Select(p => new
         {

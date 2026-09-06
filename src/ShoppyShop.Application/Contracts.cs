@@ -24,7 +24,18 @@ public sealed record ProductQuery(
     string? Sort = null,
     decimal? MinPrice = null,
     decimal? MaxPrice = null,
-    bool IncludeDeleted = false);
+    bool IncludeDeleted = false,
+    string? Cursor = null,
+    int? Limit = null);
+
+/// <summary>
+/// One page of a product listing. <paramref name="NextCursor"/> is null on the last page — that is
+/// the only end-of-list signal, because a keyset query never learns the total row count (deliberately:
+/// a COUNT over the whole filtered set would cost more than the page itself).
+/// </summary>
+public sealed record ProductPageDto(
+    IReadOnlyCollection<ProductDto> Items,
+    string? NextCursor);
 
 public sealed record RegisterRequest(string Email, string Password, string? DisplayName);
 public sealed record LoginRequest(string Email, string Password);

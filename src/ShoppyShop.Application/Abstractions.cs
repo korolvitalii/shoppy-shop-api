@@ -3,8 +3,8 @@ namespace ShoppyShop.Application;
 public interface ICatalogueService
 {
     Task<IReadOnlyCollection<ProductGroupDto>> GetGroupsAsync(bool includeDeleted, CancellationToken cancellationToken);
-    Task<IReadOnlyCollection<ProductDto>> GetProductsAsync(ProductQuery query, CancellationToken cancellationToken);
-    Task<IReadOnlyCollection<ProductDto>> GetGroupProductsAsync(string groupId, ProductQuery query, CancellationToken cancellationToken);
+    Task<ProductPageDto> GetProductsAsync(ProductQuery query, CancellationToken cancellationToken);
+    Task<ProductPageDto> GetGroupProductsAsync(string groupId, ProductQuery query, CancellationToken cancellationToken);
     Task<ProductDto?> GetProductAsync(string groupId, string productId, bool includeDeleted, CancellationToken cancellationToken);
 }
 

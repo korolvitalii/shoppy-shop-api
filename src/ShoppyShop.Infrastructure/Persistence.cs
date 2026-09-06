@@ -50,6 +50,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne(x => x.Group).WithMany(x => x.Products).HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => x.GroupId);
             entity.HasIndex(x => new { x.GroupId, x.IsDeleted });
+
+            // Keyset pagination seeks on (sort key, Id), so each sort the catalogue offers needs an
+            // index in exactly that shape — otherwise the seek degrades to a scan and sort, and the
+            // whole point of paging this way is lost. The price sorts order by
+            // COALESCE("SalePrice", "Price"), which is an expression rather than a column, so that
+            // index is created as raw SQL in the migration instead of here.
+            entity.HasIndex(x => new { x.GroupId, x.Id });
+            entity.HasIndex(x => new { x.Name, x.Id });
+
             entity.HasQueryFilter(x => !x.IsDeleted);
         });
 

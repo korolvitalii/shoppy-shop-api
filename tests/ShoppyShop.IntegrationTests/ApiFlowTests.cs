@@ -61,12 +61,77 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
         await Factory.Services.InitializeDatabaseAsync(Factory.Services.GetRequiredService<IConfiguration>());
 
         var groups = await Client.GetFromJsonAsync<ProductGroupDto[]>("/api/product-groups", JsonOptions);
-        var products = await Client.GetFromJsonAsync<ProductDto[]>("/api/products", JsonOptions);
+        var firstPage = await Client.GetFromJsonAsync<ProductPageDto>("/api/products", JsonOptions);
 
         Assert.NotNull(groups);
-        Assert.NotNull(products);
+        Assert.NotNull(firstPage);
         Assert.Equal(6, groups.Length);
-        Assert.Equal(54, products.Length);
+
+        // The seeded catalogue is 54 products against a default page of 24, so the listing is paged
+        // and the client is expected to follow the cursor.
+        Assert.Equal(24, firstPage.Items.Count);
+        Assert.NotNull(firstPage.NextCursor);
+
+        var ids = await DrainProductsAsync("/api/products");
+
+        Assert.Equal(54, ids.Count);
+        Assert.Equal(54, ids.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
+    public async Task ProductPagesAreStableAcrossEverySupportedSortOrder()
+    {
+        await Factory.Services.InitializeDatabaseAsync(Factory.Services.GetRequiredService<IConfiguration>());
+
+        foreach (var sort in new[] { "featured", "price-asc", "price-desc", "name" })
+        {
+            // Against PostgreSQL rather than the unit tests' SQLite: the seek predicate compares
+            // strings with the database's own collation, which is not the same ordering SQLite uses,
+            // so paging has to be shown to agree with ORDER BY on the engine that actually serves it.
+            var whole = await Client.GetFromJsonAsync<ProductPageDto>(
+                $"/api/products?sort={sort}&limit=100",
+                JsonOptions);
+            var paged = await DrainProductsAsync($"/api/products?sort={sort}&limit=7");
+
+            Assert.NotNull(whole);
+            Assert.Null(whole.NextCursor);
+            Assert.Equal(whole.Items.Select(product => product.Id), paged);
+        }
+    }
+
+    [Fact]
+    public async Task ProductListingRejectsAnUnusableCursorOrPageSize()
+    {
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await Client.GetAsync("/api/products?cursor=not-a-cursor")).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await Client.GetAsync("/api/products?limit=5000")).StatusCode);
+    }
+
+    private async Task<IReadOnlyList<string>> DrainProductsAsync(string url)
+    {
+        var ids = new List<string>();
+        string? cursor = null;
+
+        // Bounded so a cursor that fails to advance fails an assertion instead of hanging the suite.
+        for (var page = 0; page < 30; page++)
+        {
+            var separator = url.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+            var next = cursor is null ? url : $"{url}{separator}cursor={Uri.EscapeDataString(cursor)}";
+            var result = await Client.GetFromJsonAsync<ProductPageDto>(next, JsonOptions);
+
+            Assert.NotNull(result);
+            ids.AddRange(result.Items.Select(product => product.Id));
+            cursor = result.NextCursor;
+            if (cursor is null)
+            {
+                break;
+            }
+        }
+
+        return ids;
     }
 
     [Fact]
