@@ -17,7 +17,7 @@ public static class ApiEndpoints
         MapFeatureConfig(endpoints.MapGroup("/api").WithTags("Configuration"));
         MapAssistant(endpoints.MapGroup("/api/assistant").WithTags("Assistant").RequireRateLimiting("assistant"));
         MapAuth(endpoints.MapGroup("/api/auth").WithTags("Authentication"));
-        MapFavorites(endpoints.MapGroup("/api/favorites").WithTags("Favorites").RequireAuthorization());
+        MapFavorites(endpoints.MapGroup("/api/favorites").WithTags("Favorites").RequireAuthorization().RequireRateLimiting("favorites"));
         MapOrders(endpoints.MapGroup("/api/orders").WithTags("Orders").RequireAuthorization());
         MapAdmin(endpoints.MapGroup("/api/admin").WithTags("Administration").RequireAuthorization(policy => policy.RequireRole("Admin")));
         return endpoints;

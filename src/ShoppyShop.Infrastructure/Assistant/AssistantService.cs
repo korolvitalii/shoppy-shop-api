@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 using ShoppyShop.Application;
 
@@ -10,6 +11,7 @@ namespace ShoppyShop.Infrastructure.Assistant;
 public sealed class AssistantService(
     IAssistantModelClient modelClient,
     ICatalogueService catalogueService,
+    IOptions<FeatureConfigOptions> featureOptions,
     ILogger<AssistantService> logger) : IAssistantService
 {
     private const int MaxHistoryTurns = 10;
@@ -26,6 +28,13 @@ public sealed class AssistantService(
 
     public async Task<AssistantChatResponse> ChatAsync(AssistantChatRequest request, CancellationToken cancellationToken)
     {
+        // Checked here rather than at the route: this is the last point before a billable model call,
+        // and a client that never reads /feature-config must not be able to spend money anyway.
+        if (!featureOptions.Value.AssistantEnabled)
+        {
+            throw new AppServiceUnavailableException("The shopping assistant is currently unavailable.");
+        }
+
         Validate(request);
 
         var messages = BuildInitialMessages(request);

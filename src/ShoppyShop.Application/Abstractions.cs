@@ -56,3 +56,10 @@ public sealed class AppConflictException(string message) : Exception(message);
 public sealed class AppNotFoundException(string message) : Exception(message);
 public sealed class AppUnauthorizedException(string message) : Exception(message);
 public sealed class AppUnprocessableException(string message) : Exception(message);
+
+/// <summary>
+/// A feature is switched off by configuration. Distinct from a failure: the request was well formed,
+/// nothing is broken, and retrying will not help until an operator re-enables it. Mapped to 422
+/// rather than 503 — see the reasoning in <c>ApiExceptionHandler</c>.
+/// </summary>
+public sealed class AppServiceUnavailableException(string message) : Exception(message);

@@ -487,3 +487,5 @@ $RECYCLE.BIN/
 /CLAUDE.md
 /cdk.context.json
 /.agents
+# Local review/scratch documents (not synced via git)
+/docs

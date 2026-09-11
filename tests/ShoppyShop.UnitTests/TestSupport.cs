@@ -66,11 +66,9 @@ internal static class TestSupport
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<AppDbContext>(dbContext);
-        services.AddIdentityCore<AppUser>(options =>
-            {
-                options.Password.RequiredLength = 10;
-                options.Password.RequireNonAlphanumeric = true;
-            })
+        // Production's own configuration, so lockout tests pin the values this app ships rather
+        // than Identity's defaults, which agree on the attempt count but not on the window.
+        services.AddIdentityCore<AppUser>(DependencyInjection.ConfigureIdentity)
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<AppDbContext>();
 

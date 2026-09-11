@@ -8,6 +8,42 @@ namespace ShoppyShop.UnitTests;
 
 public sealed class AdminCatalogueServiceTests
 {
+    [Theory]
+    [InlineData(0.004)]
+    [InlineData(10.005)]
+    [InlineData(1_000_001)]
+    public async Task UpsertProductAsyncRejectsPricesTheMoneyColumnCannotStoreExactly(decimal price)
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        fixture.DbContext.ProductGroups.Add(new ProductGroup { Id = "beauty", Name = "Beauty", Description = "d", ImageUrl = "/g.jpg" });
+        await fixture.DbContext.SaveChangesAsync();
+        var service = new AdminCatalogueService(fixture.DbContext);
+
+        // 0.004 is positive, so the old check passed it — and numeric(12,2) then stored 0.00,
+        // producing a free product at checkout, which reads the stored price.
+        await Assert.ThrowsAsync<AppUnprocessableException>(() => service.UpsertProductAsync(
+            "product-1",
+            new ProductWriteRequest("product-1", "beauty", "Name", "Brand", "Description", "/i.jpg", price, null, true),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpsertProductAsyncAcceptsATwoDecimalPlacePrice()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        fixture.DbContext.ProductGroups.Add(new ProductGroup { Id = "beauty", Name = "Beauty", Description = "d", ImageUrl = "/g.jpg" });
+        await fixture.DbContext.SaveChangesAsync();
+        var service = new AdminCatalogueService(fixture.DbContext);
+
+        var product = await service.UpsertProductAsync(
+            "product-1",
+            new ProductWriteRequest("product-1", "beauty", "Name", "Brand", "Description", "/i.jpg", 19.99m, 9.99m, true),
+            CancellationToken.None);
+
+        Assert.Equal(19.99m, product.Price);
+        Assert.Equal(9.99m, product.SalePrice);
+    }
+
     [Fact]
     public async Task UpsertProductAsyncRejectsASalePriceThatIsNotLowerThanThePrice()
     {

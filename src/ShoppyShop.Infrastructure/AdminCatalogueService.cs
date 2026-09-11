@@ -7,6 +7,11 @@ namespace ShoppyShop.Infrastructure;
 
 public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalogueService
 {
+    // Prices are stored as numeric(12,2). PostgreSQL rounds anything finer to that scale without
+    // complaint, so 0.004 would pass a ">0" check and persist as 0.00 — a free product at checkout,
+    // which reads the stored price rather than the submitted one.
+    private const decimal MaxPrice = CommerceLimits.MaxProductPrice;
+
     public async Task<ProductGroupDto> UpsertGroupAsync(
         string id,
         ProductGroupWriteRequest request,
@@ -67,7 +72,13 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         CancellationToken cancellationToken)
     {
         ValidateId(id, request.Id);
-        if (request.Price <= 0 || request.SalePrice is <= 0 || request.SalePrice >= request.Price)
+        ValidateMoney(request.Price, nameof(request.Price));
+        if (request.SalePrice is { } salePrice)
+        {
+            ValidateMoney(salePrice, nameof(request.SalePrice));
+        }
+
+        if (request.SalePrice >= request.Price)
         {
             throw new AppUnprocessableException("Price must be positive and sale price must be lower than price.");
         }
@@ -127,6 +138,19 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         if (string.IsNullOrWhiteSpace(routeId) || !string.Equals(routeId, bodyId, StringComparison.Ordinal))
         {
             throw new AppValidationException("Route and body identifiers must match.");
+        }
+    }
+
+    private static void ValidateMoney(decimal value, string field)
+    {
+        if (decimal.Round(value, 2) != value)
+        {
+            throw new AppUnprocessableException($"{field} must have at most two decimal places.");
+        }
+
+        if (value <= 0 || value > MaxPrice)
+        {
+            throw new AppUnprocessableException($"{field} must be greater than zero and at most {MaxPrice:0.00}.");
         }
     }
 

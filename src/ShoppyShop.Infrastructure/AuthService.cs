@@ -60,10 +60,34 @@ public sealed class AuthService(
             throw new AppValidationException("Email and password are required.");
         }
 
+        // The unknown-address and wrong-password paths return the same message and do the same
+        // password work, so neither the body nor the response time separates them. The locked-out
+        // path below does return early and is measurably faster; that matches what SignInManager
+        // itself does, and is an accepted trade rather than an oversight.
         var user = await userManager.FindByEmailAsync(request.Email.Trim());
-        if (user is null || !await userManager.CheckPasswordAsync(user, request.Password))
+        if (user is null)
+        {
+            // Without this the message is a fig leaf: an unregistered address would be rejected in
+            // microseconds while a registered one pays full PBKDF2, and the difference is trivially
+            // measurable. Hash a throwaway user so both paths cost the same.
+            userManager.PasswordHasher.HashPassword(new AppUser(), request.Password);
+            throw new AppUnauthorizedException("Invalid email or password.");
+        }
+
+        if (await userManager.IsLockedOutAsync(user))
         {
             throw new AppUnauthorizedException("Invalid email or password.");
+        }
+
+        if (!await userManager.CheckPasswordAsync(user, request.Password))
+        {
+            await RecordFailedAccessAsync(user);
+            throw new AppUnauthorizedException("Invalid email or password.");
+        }
+
+        if (await userManager.GetAccessFailedCountAsync(user) > 0)
+        {
+            await userManager.ResetAccessFailedCountAsync(user);
         }
 
         return await CreateSessionAsync(user, cancellationToken);
@@ -153,6 +177,39 @@ public sealed class AuthService(
             await RevokeFamilyAsync(userId, timeProvider.GetUtcNow(), ct);
             await transaction.CommitAsync(ct);
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Records one failed sign-in, retrying if a concurrent attempt wins the row.
+    /// </summary>
+    /// <remarks>
+    /// <c>AccessFailedAsync</c> increments the count and sets <c>LockoutEnd</c> once it reaches the
+    /// configured maximum — without it, <c>MaxFailedAccessAttempts</c> has no effect whatsoever. It
+    /// guards the write with the user's <c>ConcurrencyStamp</c> and <em>returns</em> a failed
+    /// <c>IdentityResult</c> rather than throwing, so discarding the result loses increments
+    /// silently: parallel guesses all read the same count and only one survives. Sequential guessing
+    /// would still lock at the limit, but a burst — the shape of attack this exists to stop — would
+    /// not. Re-read the user and retry instead.
+    /// </remarks>
+    private async Task RecordFailedAccessAsync(AppUser user)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            if ((await userManager.AccessFailedAsync(user)).Succeeded)
+            {
+                return;
+            }
+
+            // The tracked instance carries the stale stamp that just lost, so it has to be detached
+            // before the re-read; otherwise the store hands back the same stale entity.
+            dbContext.Entry(user).State = EntityState.Detached;
+            if (await userManager.FindByIdAsync(user.Id.ToString()) is not { } reloaded)
+            {
+                return;
+            }
+
+            user = reloaded;
+        }
     }
 
     private async Task<AuthResult> CreateSessionAsync(
