@@ -1,6 +1,7 @@
 using System.Text.Json;
 
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 using ShoppyShop.Application;
 using ShoppyShop.Domain;
@@ -11,6 +12,21 @@ namespace ShoppyShop.UnitTests;
 
 public sealed class AssistantServiceTests
 {
+    [Fact]
+    public async Task ChatAsyncRefusesBeforeCallingTheModelWhenTheAssistantIsDisabled()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var model = new FakeAssistantModelClient(
+            new AssistantModelTurn([new AssistantTextBlock("should never be reached")], []));
+        var service = CreateService(model, fixture.DbContext, assistantEnabled: false);
+
+        await Assert.ThrowsAsync<AppServiceUnavailableException>(() =>
+            service.ChatAsync(new AssistantChatRequest("hello"), CancellationToken.None));
+
+        // The point of the flag is cost: a disabled assistant must not reach the paid API at all.
+        Assert.Empty(model.Calls);
+    }
+
     [Fact]
     public async Task ChatAsyncToolCallThenRecommendedIdsMarkerReturnsOnlyRecommendedProducts()
     {
@@ -241,8 +257,15 @@ public sealed class AssistantServiceTests
         Assert.Contains("history", exception.Errors.Keys);
     }
 
-    private static AssistantService CreateService(IAssistantModelClient model, AppDbContext dbContext) =>
-        new(model, new CatalogueService(dbContext), NullLogger<AssistantService>.Instance);
+    private static AssistantService CreateService(
+        IAssistantModelClient model,
+        AppDbContext dbContext,
+        bool assistantEnabled = true) =>
+        new(
+            model,
+            new CatalogueService(dbContext),
+            Options.Create(new FeatureConfigOptions { AssistantEnabled = assistantEnabled }),
+            NullLogger<AssistantService>.Instance);
 
     private static void SeedProducts(AppDbContext dbContext, params Product[] products)
     {

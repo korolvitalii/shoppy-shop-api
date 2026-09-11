@@ -111,6 +111,84 @@ public sealed class OrdersServiceTests
             CancellationToken.None));
     }
 
+    [Fact]
+    public async Task CreateAsyncRejectsDuplicateLinesWhoseCombinedQuantityExceedsThePerProductBound()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        SeedProduct(fixture.DbContext, "beauty-1", "beauty", price: 10m, salePrice: null);
+        var service = new OrdersService(fixture.DbContext, TimeProvider.System);
+        var request = CreateRequest("beauty-1", "beauty", clientUnitPrice: 10m, quantity: 99) with
+        {
+            Lines =
+            [
+                new OrderItemRequest("beauty-1", "beauty", "n", "/i.jpg", 10m, 99),
+                new OrderItemRequest("beauty-1", "beauty", "n", "/i.jpg", 10m, 99),
+            ],
+        };
+
+        // Each line satisfies the 1-99 per-line rule; grouped, they are a single line of 198.
+        await Assert.ThrowsAsync<AppValidationException>(() =>
+            service.CreateAsync(Guid.NewGuid(), "key", request, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateAsyncRejectsMoreLinesThanTheOrderBound()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        SeedProduct(fixture.DbContext, "beauty-1", "beauty", price: 10m, salePrice: null);
+        var service = new OrdersService(fixture.DbContext, TimeProvider.System);
+        var request = CreateRequest("beauty-1", "beauty", clientUnitPrice: 10m, quantity: 1) with
+        {
+            Lines = [.. Enumerable.Range(0, 101)
+                .Select(i => new OrderItemRequest($"product-{i}", "beauty", "n", "/i.jpg", 10m, 1))],
+        };
+
+        await Assert.ThrowsAsync<AppValidationException>(() =>
+            service.CreateAsync(Guid.NewGuid(), "key", request, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateAsyncRejectsAnOversizedDeliveryFieldRatherThanFailingAtTheDatabase()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        SeedProduct(fixture.DbContext, "beauty-1", "beauty", price: 10m, salePrice: null);
+        var service = new OrdersService(fixture.DbContext, TimeProvider.System);
+        var request = CreateRequest("beauty-1", "beauty", clientUnitPrice: 10m, quantity: 1) with
+        {
+            Delivery = new DeliveryAddress(
+                new string('n', 201),
+                "customer@example.test",
+                "1 Test Street",
+                "London",
+                "SW1A 1AA",
+                "United Kingdom"),
+        };
+
+        await Assert.ThrowsAsync<AppValidationException>(() =>
+            service.CreateAsync(Guid.NewGuid(), "key", request, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateAsyncRejectsAMalformedDeliveryEmail()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        SeedProduct(fixture.DbContext, "beauty-1", "beauty", price: 10m, salePrice: null);
+        var service = new OrdersService(fixture.DbContext, TimeProvider.System);
+        var request = CreateRequest("beauty-1", "beauty", clientUnitPrice: 10m, quantity: 1) with
+        {
+            Delivery = new DeliveryAddress(
+                "Test Customer",
+                "not-an-email",
+                "1 Test Street",
+                "London",
+                "SW1A 1AA",
+                "United Kingdom"),
+        };
+
+        await Assert.ThrowsAsync<AppValidationException>(() =>
+            service.CreateAsync(Guid.NewGuid(), "key", request, CancellationToken.None));
+    }
+
     private static CreateOrderRequest CreateRequest(string productId, string groupId, decimal clientUnitPrice, int quantity) => new(
         [new OrderItemRequest(productId, groupId, "Client-supplied name", "/client.jpg", clientUnitPrice, quantity)],
         new DeliveryAddress("Test Customer", "customer@example.test", "1 Test Street", "London", "SW1A 1AA", "United Kingdom"),

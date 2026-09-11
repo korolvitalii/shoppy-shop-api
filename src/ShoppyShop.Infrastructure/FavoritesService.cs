@@ -7,6 +7,8 @@ namespace ShoppyShop.Infrastructure;
 
 public sealed class FavoritesService(AppDbContext dbContext, TimeProvider timeProvider) : IFavoritesService
 {
+    private const int MaxFavoritesPerUser = 500;
+
     public async Task<IReadOnlyCollection<ProductDto>> GetAsync(Guid userId, CancellationToken cancellationToken) =>
         await dbContext.Favorites.AsNoTracking()
             .Where(x => x.UserId == userId)
@@ -33,6 +35,17 @@ public sealed class FavoritesService(AppDbContext dbContext, TimeProvider timePr
         if (await dbContext.Favorites.AnyAsync(x => x.UserId == userId && x.ProductId == productId, cancellationToken))
         {
             return;
+        }
+
+        // GetAsync returns the whole collection unpaged, so its cost is chosen by whoever wrote it,
+        // and the unique (UserId, ProductId) key caps that at the catalogue size. Against today's 54
+        // seeded products this bound is unreachable and the count is pure overhead; it is here for
+        // the 100k-product catalogue the pagination work is aimed at, and should be revisited if
+        // that never arrives. Checked after the duplicate test so re-saving an existing favourite at
+        // the limit still succeeds. 422 matches the checkout bounds — same class of violation.
+        if (await dbContext.Favorites.CountAsync(x => x.UserId == userId, cancellationToken) >= MaxFavoritesPerUser)
+        {
+            throw new AppUnprocessableException($"A maximum of {MaxFavoritesPerUser} favourites can be saved.");
         }
 
         dbContext.Favorites.Add(new Favorite

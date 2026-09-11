@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -85,6 +86,19 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    // Partitioned by account rather than IP: these routes require authentication, and the abuse
+    // being bounded is one account inflating its own collection. This is why UseRateLimiter runs
+    // after UseAuthentication below — HttpContext.User is empty before it.
+    options.AddPolicy("favorites", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+            ?? context.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 60,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
     options.AddPolicy("assistant", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
@@ -99,9 +113,13 @@ app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseCors();
-app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// After authentication, so a user-partitioned policy sees a populated HttpContext.User. The
+// IP-partitioned policies behave identically either side of the move, and endpoint metadata is
+// already available here, so RequireRateLimiting still applies before the endpoint runs.
+app.UseRateLimiter();
 
 app.MapOpenApi();
 app.MapScalarApiReference();
