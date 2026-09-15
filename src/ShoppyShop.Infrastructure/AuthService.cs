@@ -97,45 +97,80 @@ public sealed class AuthService(
     {
         var now = timeProvider.GetUtcNow();
         var tokenHash = HashToken(refreshToken);
-        var session = await dbContext.RefreshSessions.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.TokenHash == tokenHash, cancellationToken);
 
-        if (session is null)
-        {
-            throw new AppUnauthorizedException("Refresh token is invalid.");
-        }
+        // A lock-free lookup only to find which user's session family to lock below. Every decision
+        // that actually matters (revoked? expired?) is taken from a fresh read after the lock, so
+        // this value going stale before the lock is acquired costs nothing.
+        var userId = await dbContext.RefreshSessions.AsNoTracking()
+            .Where(x => x.TokenHash == tokenHash)
+            .Select(x => (Guid?)x.UserId)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new AppUnauthorizedException("Refresh token is invalid.");
 
-        if (session.RevokedAt is not null)
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        var (result, reuseDetected) = await strategy.ExecuteAsync(async ct =>
         {
-            await RevokeFamilyAsync(session.UserId, now, cancellationToken);
+            dbContext.ChangeTracker.Clear();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+
+            // Every mutation of a user's refresh-session family — this rotation, reuse revocation
+            // below, and the revocation in ChangePasswordAsync — takes this same per-user lock before
+            // touching the family, so at most one such operation is ever in flight per user. A single
+            // claimed row's lock is not enough: waiting for it only lets a statement re-check a row it
+            // already targeted when it started, not discover a row inserted by someone else afterward.
+            // Without this, revoking "all of this user's currently live sessions" (below, and in
+            // ChangePasswordAsync) can start before a concurrent rotation's replacement session
+            // exists in the table, and finish having never seen it — leaving that replacement live
+            // despite a reuse that was, in fact, detected.
+            await AcquireUserSessionLockAsync(userId, ct);
+
+            var session = await dbContext.RefreshSessions.SingleOrDefaultAsync(x => x.TokenHash == tokenHash, ct)
+                ?? throw new AppUnauthorizedException("Refresh token is invalid.");
+
+            if (session.RevokedAt is not null)
+            {
+                await RevokeFamilyAsync(userId, now, ct);
+                await transaction.CommitAsync(ct);
+                return (Result: (AuthResult?)null, ReuseDetected: true);
+            }
+
+            if (session.ExpiresAt <= now)
+            {
+                throw new AppUnauthorizedException("Refresh token has expired.");
+            }
+
+            // A conditional update, not a tracked mutation, even though the per-user lock above
+            // should already make "claimed == 0" impossible here: it costs nothing and means a bug
+            // in the lock (wrong key, wrong provider check, a future caller that forgets to take it)
+            // fails safe as a detected reuse rather than as a silent lost update that overwrites
+            // whatever another, unserialized writer just did to this row.
+            var replacementId = Guid.NewGuid();
+            var claimed = await dbContext.RefreshSessions
+                .Where(x => x.Id == session.Id && x.RevokedAt == null)
+                .ExecuteUpdateAsync(
+                    x => x.SetProperty(s => s.RevokedAt, now).SetProperty(s => s.ReplacedById, replacementId),
+                    ct);
+
+            if (claimed == 0)
+            {
+                await RevokeFamilyAsync(userId, now, ct);
+                await transaction.CommitAsync(ct);
+                return (Result: (AuthResult?)null, ReuseDetected: true);
+            }
+
+            var user = await userManager.FindByIdAsync(userId.ToString())
+                ?? throw new AppUnauthorizedException("User no longer exists.");
+            var created = await CreateSessionAsync(user, ct, replacementId);
+            await transaction.CommitAsync(ct);
+            return (Result: created, ReuseDetected: false);
+        }, cancellationToken);
+
+        if (reuseDetected)
+        {
             throw new AppUnauthorizedException("Refresh token reuse was detected. Please sign in again.");
         }
 
-        if (session.ExpiresAt <= now)
-        {
-            throw new AppUnauthorizedException("Refresh token has expired.");
-        }
-
-        // Claim the token with a conditional update rather than a tracked mutation: only the
-        // request that actually flips RevokedAt from null may rotate it. Without this, two
-        // concurrent refreshes of the same token both pass the check above and both mint a
-        // session, which is exactly the case reuse detection exists to catch.
-        var replacementId = Guid.NewGuid();
-        var claimed = await dbContext.RefreshSessions
-            .Where(x => x.Id == session.Id && x.RevokedAt == null)
-            .ExecuteUpdateAsync(
-                x => x.SetProperty(s => s.RevokedAt, now).SetProperty(s => s.ReplacedById, replacementId),
-                cancellationToken);
-
-        if (claimed == 0)
-        {
-            await RevokeFamilyAsync(session.UserId, now, cancellationToken);
-            throw new AppUnauthorizedException("Refresh token reuse was detected. Please sign in again.");
-        }
-
-        var user = await userManager.FindByIdAsync(session.UserId.ToString())
-            ?? throw new AppUnauthorizedException("User no longer exists.");
-        return await CreateSessionAsync(user, cancellationToken, replacementId);
+        return result!;
     }
 
     public async Task LogoutAsync(string? refreshToken, CancellationToken cancellationToken)
@@ -172,6 +207,9 @@ public sealed class AuthService(
                 ?? throw new AppNotFoundException("User was not found.");
 
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            // Same per-user lock as RefreshAsync: without it, this revoke can start before a
+            // concurrent rotation's replacement session exists and never see it.
+            await AcquireUserSessionLockAsync(userId, ct);
             var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
             ThrowIfIdentityFailed(result);
             await RevokeFamilyAsync(userId, timeProvider.GetUtcNow(), ct);
@@ -258,6 +296,32 @@ public sealed class AuthService(
         dbContext.RefreshSessions
             .Where(x => x.UserId == userId && x.RevokedAt == null)
             .ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, now), cancellationToken);
+
+    /// <summary>
+    /// Serializes every operation that reasons about "all of this user's currently live refresh
+    /// sessions" behind one per-user lock, held for the rest of the caller's transaction.
+    /// </summary>
+    /// <remarks>
+    /// SQLite (unit tests) has no advisory-lock equivalent, and those tests drive one request at a
+    /// time against a shared connection rather than genuine concurrency, so there is nothing here
+    /// for a lock to serialize against.
+    /// </remarks>
+    private async Task AcquireUserSessionLockAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsNpgsql())
+        {
+            return;
+        }
+
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({ToAdvisoryLockKey(userId)})",
+            cancellationToken);
+    }
+
+    // pg_advisory_xact_lock takes a single 64-bit key. A Guid has no canonical int64 form, so this
+    // only needs to be a stable function of its bytes, not collision-free: a collision would just
+    // serialize two unrelated users' operations against each other, never produce a wrong result.
+    private static long ToAdvisoryLockKey(Guid userId) => BitConverter.ToInt64(userId.ToByteArray(), 0);
 
     private static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
