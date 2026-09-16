@@ -4,10 +4,12 @@ using System.Net.Http.Json;
 using System.Text.Json;
 
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 using ShoppyShop.Application;
+using ShoppyShop.Domain;
 using ShoppyShop.Infrastructure;
 
 using Testcontainers.PostgreSql;
@@ -267,6 +269,234 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
             (await Client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, newPassword), JsonOptions)).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await Client.PostAsync("/api/auth/logout", null)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await Client.PostAsync("/api/auth/refresh", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task ConcurrentRefreshOfTheSameTokenLeavesNoLiveSessionOnceReuseIsDetected()
+    {
+        // The interleaving this guards against — the loser's family-revoke landing before the
+        // winner's replacement session is inserted — is timing-dependent against real Postgres, so a
+        // single race would not reliably exercise it. The fix makes the outcome hold regardless of
+        // timing, so it is run more than once; the iteration count is kept low because each one spends
+        // four requests against the "auth" rate limiter's 10-per-minute budget.
+        for (var iteration = 0; iteration < 2; iteration++)
+        {
+            var email = $"race-{Guid.NewGuid():N}@example.test";
+            var register = await Client.PostAsJsonAsync(
+                "/api/auth/register",
+                new RegisterRequest(email, "Strong!Password123", null),
+                JsonOptions);
+            register.EnsureSuccessStatusCode();
+            var originalCookie = register.Headers.GetValues("Set-Cookie")
+                .Single(x => x.StartsWith("shoppy.refresh=", StringComparison.Ordinal))
+                .Split(';')[0];
+
+            // Two independent clients replay the same refresh token at once, the way a stolen token
+            // racing the legitimate client's own use of it would.
+            var responses = await Task.WhenAll(
+                SendRefreshWithCookieAsync(originalCookie),
+                SendRefreshWithCookieAsync(originalCookie));
+
+            var winner = Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK);
+            Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Unauthorized);
+
+            var replacementCookie = winner.Headers.GetValues("Set-Cookie")
+                .Single(x => x.StartsWith("shoppy.refresh=", StringComparison.Ordinal))
+                .Split(';')[0];
+
+            // Reuse was detected on this token family, so the replacement the winner just received
+            // must be dead too — detected reuse ends the whole chain, not just the replayed token.
+            // Before the fix, this could still succeed depending on how the two requests interleaved.
+            var followUp = await SendRefreshWithCookieAsync(replacementCookie);
+            Assert.Equal(HttpStatusCode.Unauthorized, followUp.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task ReplayingAnOlderTokenDuringAnInFlightRotationLeavesNoLiveSessionEither()
+    {
+        // A: issued at registration. B: A rotated into B (sequential, legitimate). Then, concurrently:
+        // an attacker replays the already-rotated A while the legitimate client is rotating B into C.
+        // A family-revoke triggered by replaying A only inspects rows that exist when it starts; a
+        // per-row lock on B does not make it discover C if C is inserted afterward. Only a per-user
+        // lock held for the whole decision, on both sides, forces one full rotation-or-revoke to
+        // finish before the other can even read the family's state.
+        var email = $"oldreplay-{Guid.NewGuid():N}@example.test";
+        var register = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest(email, "Strong!Password123", null),
+            JsonOptions);
+        register.EnsureSuccessStatusCode();
+        var cookieA = register.Headers.GetValues("Set-Cookie")
+            .Single(x => x.StartsWith("shoppy.refresh=", StringComparison.Ordinal))
+            .Split(';')[0];
+
+        var rotateAtoB = await SendRefreshWithCookieAsync(cookieA);
+        rotateAtoB.EnsureSuccessStatusCode();
+        var cookieB = rotateAtoB.Headers.GetValues("Set-Cookie")
+            .Single(x => x.StartsWith("shoppy.refresh=", StringComparison.Ordinal))
+            .Split(';')[0];
+
+        var responses = await Task.WhenAll(SendRefreshWithCookieAsync(cookieB), SendRefreshWithCookieAsync(cookieA));
+        var rotateBtoC = responses[0];
+        var replayA = responses[1];
+
+        // A was already revoked by the sequential A-to-B rotation above, so replaying it is reuse
+        // regardless of how it interleaves with the B-to-C attempt.
+        Assert.Equal(HttpStatusCode.Unauthorized, replayA.StatusCode);
+
+        if (rotateBtoC.StatusCode == HttpStatusCode.OK)
+        {
+            var cookieC = rotateBtoC.Headers.GetValues("Set-Cookie")
+                .Single(x => x.StartsWith("shoppy.refresh=", StringComparison.Ordinal))
+                .Split(';')[0];
+
+            // Reuse was detected somewhere in this family, so C — even though it was actually
+            // issued — must not be usable either. Before the per-user lock, C could survive.
+            var followUp = await SendRefreshWithCookieAsync(cookieC);
+            Assert.Equal(HttpStatusCode.Unauthorized, followUp.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task PerUserAdvisoryLockForcesAFamilyRevokeToWaitForAConcurrentRotationsCommit()
+    {
+        // The interleaving above is real but not reliably forceable through two Task.WhenAll HTTP
+        // requests — this drives it deterministically at the database level instead, against the
+        // same connection AuthService uses, calling the exact primitive AuthService.
+        // AcquireUserSessionLockAsync relies on (pg_advisory_xact_lock keyed by the user id).
+        //
+        // A bulk UPDATE's row set is fixed by its statement-start snapshot: waiting for a lock on a
+        // row that snapshot already found only lets it re-check that row's latest value, it does not
+        // expand the row set to include a row a still-open transaction inserts afterward. So this
+        // holds a "rotation" transaction open across both the claim and the replacement insert, and
+        // only lets a "revoke" transaction attempt its lock (and therefore its scan) while the
+        // rotation is still uncommitted. If the lock did not serialize them, the revoke could commit
+        // using a snapshot taken before the replacement existed.
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(postgres.GetConnectionString()).Options;
+        var userId = Guid.NewGuid();
+        var sessionBId = Guid.NewGuid();
+        var replacementId = Guid.NewGuid();
+        var lockKey = BitConverter.ToInt64(userId.ToByteArray(), 0);
+
+        await using (var seed = new AppDbContext(options))
+        {
+            seed.RefreshSessions.Add(new RefreshSession
+            {
+                Id = sessionBId,
+                UserId = userId,
+                TokenHash = $"seed-b-{sessionBId:N}",
+                CreatedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var rotationHasClaimed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var revokeIsAboutToBlock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var rotation = Task.Run(async () =>
+        {
+            await using var rotationContext = new AppDbContext(options);
+            await using var transaction = await rotationContext.Database.BeginTransactionAsync();
+            await rotationContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})");
+
+            var session = await rotationContext.RefreshSessions.SingleAsync(x => x.Id == sessionBId);
+            session.RevokedAt = DateTimeOffset.UtcNow;
+            session.ReplacedById = replacementId;
+            await rotationContext.SaveChangesAsync();
+            rotationHasClaimed.SetResult();
+
+            // Give the revoke side time to actually issue its (blocking) lock request before this
+            // transaction inserts the replacement and commits.
+            await revokeIsAboutToBlock.Task;
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+
+            rotationContext.RefreshSessions.Add(new RefreshSession
+            {
+                Id = replacementId,
+                UserId = userId,
+                TokenHash = $"seed-c-{replacementId:N}",
+                CreatedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+            });
+            await rotationContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+        });
+
+        await rotationHasClaimed.Task;
+
+        var revoke = Task.Run(async () =>
+        {
+            await using var revokeContext = new AppDbContext(options);
+            await using var transaction = await revokeContext.Database.BeginTransactionAsync();
+            var lockRequest = revokeContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})");
+            revokeIsAboutToBlock.SetResult();
+            await lockRequest;
+
+            await revokeContext.RefreshSessions
+                .Where(x => x.UserId == userId && x.RevokedAt == null)
+                .ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, DateTimeOffset.UtcNow));
+            await transaction.CommitAsync();
+        });
+
+        await Task.WhenAll(rotation, revoke);
+
+        await using var verify = new AppDbContext(options);
+        var replacement = await verify.RefreshSessions.AsNoTracking().SingleAsync(x => x.Id == replacementId);
+        Assert.NotNull(replacement.RevokedAt);
+    }
+
+    private async Task<HttpResponseMessage> SendRefreshWithCookieAsync(string cookie)
+    {
+        using var raceClient = Factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            HandleCookies = false,
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh");
+        request.Headers.TryAddWithoutValidation("Cookie", cookie);
+        return await raceClient.SendAsync(request);
+    }
+
+    [Fact]
+    public async Task BootstrapAdminFailsClosedWhenTheConfiguredEmailAlreadyBelongsToANonAdminAccount()
+    {
+        // A customer self-registers with the address the operator later configures as
+        // BootstrapAdmin:Email — accidentally, or by guessing a predictable value. Re-running
+        // seeding against that configuration must refuse to promote this account rather than
+        // silently handing it Admin without ever checking BootstrapAdmin:Password against it.
+        var email = $"escalation-{Guid.NewGuid():N}@example.test";
+        var password = "Strong!Password123";
+        var register = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest(email, password, null),
+            JsonOptions);
+        register.EnsureSuccessStatusCode();
+
+        var bootstrapConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["BootstrapAdmin:Email"] = email,
+                ["BootstrapAdmin:Password"] = "Some!OtherStrongPassword456",
+            })
+            .Build();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Factory.Services.InitializeDatabaseAsync(bootstrapConfig));
+        Assert.Contains(email, error.Message, StringComparison.Ordinal);
+
+        // Fail closed means no partial promotion, not just a thrown exception: the account must
+        // still have no admin access afterward.
+        var login = await Client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, password), JsonOptions);
+        login.EnsureSuccessStatusCode();
+        var auth = await login.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        using var probeClient = Factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+        });
+        probeClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.AccessToken);
+        Assert.Equal(HttpStatusCode.Forbidden, (await probeClient.GetAsync("/api/admin/products")).StatusCode);
     }
 
     [Fact]

@@ -257,6 +257,22 @@ public sealed class AssistantServiceTests
         Assert.Contains("history", exception.Errors.Keys);
     }
 
+    [Fact]
+    public async Task ChatAsyncRejectsHistoryContainingANullEntry()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var service = CreateService(new FakeAssistantModelClient(), fixture.DbContext);
+
+        // A JSON array like `"history": [null]` deserializes to a null element in the list, not a
+        // turn with null fields. The old role check (`t.Role is not (...)`) dereferenced `t` directly
+        // and threw a NullReferenceException before the request could be rejected cleanly.
+        var history = new AssistantChatTurn?[] { null };
+
+        var exception = await Assert.ThrowsAsync<AppValidationException>(
+            () => service.ChatAsync(new AssistantChatRequest("hi", history!), CancellationToken.None));
+        Assert.Contains("history", exception.Errors.Keys);
+    }
+
     private static AssistantService CreateService(
         IAssistantModelClient model,
         AppDbContext dbContext,
