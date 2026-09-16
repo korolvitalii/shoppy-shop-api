@@ -111,11 +111,16 @@ public static class DatabaseInitializer
                 EmailConfirmed = true,
             };
             EnsureSucceeded(await userManager.CreateAsync(user, password), "create bootstrap administrator");
+            EnsureSucceeded(await userManager.AddToRoleAsync(user, "Admin"), "assign administrator role");
+            return;
         }
 
         if (!await userManager.IsInRoleAsync(user, "Admin"))
         {
-            EnsureSucceeded(await userManager.AddToRoleAsync(user, "Admin"), "assign administrator role");
+            throw new InvalidOperationException(
+                $"BootstrapAdmin:Email ('{email}') matches an existing account that is not an administrator. " +
+                "Refusing to promote it automatically. Promote it explicitly instead, or change BootstrapAdmin:Email " +
+                "to an address with no existing account.");
         }
     }
 

@@ -272,6 +272,8 @@ dotnet user-secrets set `
 
 In production, the database connection string, JWT signing key, bootstrap administrator password, and external API keys are stored as encrypted Railway service variables. They are not stored in source control.
 
+Bootstrapping fails closed: if `BootstrapAdmin:Email` matches an account that already exists and is not already an administrator, startup throws rather than promoting it, since that account's password was never checked against `BootstrapAdmin:Password`. This can only happen if someone registered that address before the bootstrap ran. Resolve it by promoting the existing account explicitly (outside this automatic seeding) or by choosing an email with no existing account.
+
 ## Database migrations
 
 Entity Framework Core migrations are stored in:

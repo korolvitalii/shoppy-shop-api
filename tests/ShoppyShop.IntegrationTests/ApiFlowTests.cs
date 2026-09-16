@@ -460,6 +460,46 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task BootstrapAdminFailsClosedWhenTheConfiguredEmailAlreadyBelongsToANonAdminAccount()
+    {
+        // A customer self-registers with the address the operator later configures as
+        // BootstrapAdmin:Email — accidentally, or by guessing a predictable value. Re-running
+        // seeding against that configuration must refuse to promote this account rather than
+        // silently handing it Admin without ever checking BootstrapAdmin:Password against it.
+        var email = $"escalation-{Guid.NewGuid():N}@example.test";
+        var password = "Strong!Password123";
+        var register = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest(email, password, null),
+            JsonOptions);
+        register.EnsureSuccessStatusCode();
+
+        var bootstrapConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["BootstrapAdmin:Email"] = email,
+                ["BootstrapAdmin:Password"] = "Some!OtherStrongPassword456",
+            })
+            .Build();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Factory.Services.InitializeDatabaseAsync(bootstrapConfig));
+        Assert.Contains(email, error.Message, StringComparison.Ordinal);
+
+        // Fail closed means no partial promotion, not just a thrown exception: the account must
+        // still have no admin access afterward.
+        var login = await Client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, password), JsonOptions);
+        login.EnsureSuccessStatusCode();
+        var auth = await login.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        using var probeClient = Factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+        });
+        probeClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.AccessToken);
+        Assert.Equal(HttpStatusCode.Forbidden, (await probeClient.GetAsync("/api/admin/products")).StatusCode);
+    }
+
+    [Fact]
     public async Task AdministratorCanManageSoftDeletedCatalogue()
     {
         var login = await Client.PostAsJsonAsync(
