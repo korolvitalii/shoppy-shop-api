@@ -71,6 +71,38 @@ public sealed class AdminCatalogueServiceTests
     }
 
     [Fact]
+    public async Task UpsertProductAsyncReturnsAValidationErrorInsteadOfThrowingOnNullBrandForANewProduct()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        fixture.DbContext.ProductGroups.Add(new ProductGroup { Id = "beauty", Name = "Beauty", Description = "d", ImageUrl = "/g.jpg" });
+        await fixture.DbContext.SaveChangesAsync();
+        var service = new AdminCatalogueService(fixture.DbContext);
+
+        // Same class of bug as the group case: Brand.Trim() ran before Required(Brand) while
+        // constructing a new product, so a null Brand threw a NullReferenceException instead of a
+        // clean AppValidationException.
+        await Assert.ThrowsAsync<AppValidationException>(() => service.UpsertProductAsync(
+            "product-1",
+            new ProductWriteRequest("product-1", "beauty", "Name", null!, "Description", "/i.jpg", 10m, null, true),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpsertProductAsyncRejectsANameLongerThanTheDatabaseColumn()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        fixture.DbContext.ProductGroups.Add(new ProductGroup { Id = "beauty", Name = "Beauty", Description = "d", ImageUrl = "/g.jpg" });
+        await fixture.DbContext.SaveChangesAsync();
+        var service = new AdminCatalogueService(fixture.DbContext);
+
+        // Product.Name is HasMaxLength(200) in Persistence.cs.
+        await Assert.ThrowsAsync<AppUnprocessableException>(() => service.UpsertProductAsync(
+            "product-1",
+            new ProductWriteRequest("product-1", "beauty", new string('x', 201), "Brand", "Description", "/i.jpg", 10m, null, true),
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task UpsertGroupAsyncRejectsARouteAndBodyIdentifierMismatch()
     {
         using var fixture = new SqliteAppDbContextFixture();
@@ -79,6 +111,37 @@ public sealed class AdminCatalogueServiceTests
         await Assert.ThrowsAsync<AppValidationException>(() => service.UpsertGroupAsync(
             "route-id",
             new ProductGroupWriteRequest("body-id", "Name", "Description", "/g.jpg", null, 0),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpsertGroupAsyncReturnsAValidationErrorInsteadOfThrowingOnNullNameForANewGroup()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var service = new AdminCatalogueService(fixture.DbContext);
+
+        // Name is non-nullable in the C# signature, but a client can still send `"name": null` over
+        // the wire — System.Text.Json does not enforce non-nullable reference types at runtime. The
+        // old code called request.Name.Trim() while constructing the new entity, before the
+        // Required() check ran, so this threw a NullReferenceException (500) instead of the intended
+        // AppValidationException (400).
+        await Assert.ThrowsAsync<AppValidationException>(() => service.UpsertGroupAsync(
+            "new-group",
+            new ProductGroupWriteRequest("new-group", null!, "Description", "/g.jpg", null, 0),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpsertGroupAsyncRejectsANameLongerThanTheDatabaseColumn()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var service = new AdminCatalogueService(fixture.DbContext);
+
+        // ProductGroup.Name is HasMaxLength(160) in Persistence.cs. SQLite does not enforce column
+        // length, so this only proves the application-level guard fires before hitting the database.
+        await Assert.ThrowsAsync<AppUnprocessableException>(() => service.UpsertGroupAsync(
+            "new-group",
+            new ProductGroupWriteRequest("new-group", new string('x', 161), "Description", "/g.jpg", null, 0),
             CancellationToken.None));
     }
 

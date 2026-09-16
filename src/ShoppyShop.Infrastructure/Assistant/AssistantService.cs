@@ -196,7 +196,7 @@ public sealed class AssistantService(
             errors["message"] = [$"Message must be {MaxMessageLength} characters or fewer."];
         }
 
-        if (request.History?.Any(t => t.Role is not ("user" or "assistant")) == true)
+        if (request.History?.Any(t => t is null || t.Role is not ("user" or "assistant")) == true)
         {
             errors["history"] = ["History entries must have role 'user' or 'assistant'."];
         }

@@ -12,29 +12,40 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
     // which reads the stored price rather than the submitted one.
     private const decimal MaxPrice = CommerceLimits.MaxProductPrice;
 
+    // Mirrors the HasMaxLength(...) calls in Persistence.cs. Kept in sync with the columns they
+    // describe, so a value that clears these checks is guaranteed to fit without truncation.
+    private const int MaxGroupIdLength = 80;
+    private const int MaxGroupNameLength = 160;
+    private const int MaxGroupImageUrlLength = 2_000;
+    private const int MaxGroupBadgeLength = 80;
+    private const int MaxProductIdLength = 100;
+    private const int MaxProductGroupIdLength = 80;
+    private const int MaxProductNameLength = 200;
+    private const int MaxProductBrandLength = 160;
+    private const int MaxProductImageUrlLength = 2_000;
+
     public async Task<ProductGroupDto> UpsertGroupAsync(
         string id,
         ProductGroupWriteRequest request,
         CancellationToken cancellationToken)
     {
-        ValidateId(id, request.Id);
+        ValidateId(id, request.Id, MaxGroupIdLength);
+        var name = Required(request.Name, nameof(request.Name), MaxGroupNameLength);
+        var description = Required(request.Description, nameof(request.Description));
+        var imageUrl = Required(request.ImageUrl, nameof(request.ImageUrl), MaxGroupImageUrlLength);
+        var badge = OptionalWithMaxLength(request.Badge, nameof(request.Badge), MaxGroupBadgeLength);
+
         var group = await dbContext.ProductGroups.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (group is null)
         {
-            group = new ProductGroup
-            {
-                Id = id,
-                Name = request.Name.Trim(),
-                Description = request.Description.Trim(),
-                ImageUrl = request.ImageUrl.Trim(),
-            };
+            group = new ProductGroup { Id = id, Name = name, Description = description, ImageUrl = imageUrl };
             dbContext.ProductGroups.Add(group);
         }
 
-        group.Name = Required(request.Name, nameof(request.Name));
-        group.Description = Required(request.Description, nameof(request.Description));
-        group.ImageUrl = Required(request.ImageUrl, nameof(request.ImageUrl));
-        group.Badge = request.Badge?.Trim();
+        group.Name = name;
+        group.Description = description;
+        group.ImageUrl = imageUrl;
+        group.Badge = badge;
         group.DisplayOrder = request.DisplayOrder;
         group.IsDeleted = false;
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -71,7 +82,7 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         ProductWriteRequest request,
         CancellationToken cancellationToken)
     {
-        ValidateId(id, request.Id);
+        ValidateId(id, request.Id, MaxProductIdLength);
         ValidateMoney(request.Price, nameof(request.Price));
         if (request.SalePrice is { } salePrice)
         {
@@ -83,7 +94,13 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
             throw new AppUnprocessableException("Price must be positive and sale price must be lower than price.");
         }
 
-        if (!await dbContext.ProductGroups.IgnoreQueryFilters().AnyAsync(x => x.Id == request.GroupId && !x.IsDeleted, cancellationToken))
+        var groupId = Required(request.GroupId, nameof(request.GroupId), MaxProductGroupIdLength);
+        var name = Required(request.Name, nameof(request.Name), MaxProductNameLength);
+        var brand = Required(request.Brand, nameof(request.Brand), MaxProductBrandLength);
+        var description = Required(request.Description, nameof(request.Description));
+        var imageUrl = Required(request.ImageUrl, nameof(request.ImageUrl), MaxProductImageUrlLength);
+
+        if (!await dbContext.ProductGroups.IgnoreQueryFilters().AnyAsync(x => x.Id == groupId && !x.IsDeleted, cancellationToken))
         {
             throw new AppUnprocessableException("The product group does not exist.");
         }
@@ -91,23 +108,15 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         var product = await dbContext.Products.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (product is null)
         {
-            product = new Product
-            {
-                Id = id,
-                GroupId = request.GroupId,
-                Name = request.Name.Trim(),
-                Brand = request.Brand.Trim(),
-                Description = request.Description.Trim(),
-                ImageUrl = request.ImageUrl.Trim(),
-            };
+            product = new Product { Id = id, GroupId = groupId, Name = name, Brand = brand, Description = description, ImageUrl = imageUrl };
             dbContext.Products.Add(product);
         }
 
-        product.GroupId = Required(request.GroupId, nameof(request.GroupId));
-        product.Name = Required(request.Name, nameof(request.Name));
-        product.Brand = Required(request.Brand, nameof(request.Brand));
-        product.Description = Required(request.Description, nameof(request.Description));
-        product.ImageUrl = Required(request.ImageUrl, nameof(request.ImageUrl));
+        product.GroupId = groupId;
+        product.Name = name;
+        product.Brand = brand;
+        product.Description = description;
+        product.ImageUrl = imageUrl;
         product.Price = request.Price;
         product.SalePrice = request.SalePrice;
         product.InStock = request.InStock;
@@ -133,11 +142,16 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static void ValidateId(string routeId, string bodyId)
+    private static void ValidateId(string routeId, string bodyId, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(routeId) || !string.Equals(routeId, bodyId, StringComparison.Ordinal))
         {
             throw new AppValidationException("Route and body identifiers must match.");
+        }
+
+        if (routeId.Length > maxLength)
+        {
+            throw new AppUnprocessableException($"Id must be {maxLength} characters or fewer.");
         }
     }
 
@@ -154,8 +168,35 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         }
     }
 
-    private static string Required(string value, string field) =>
-        string.IsNullOrWhiteSpace(value)
-            ? throw new AppValidationException($"{field} is required.")
-            : value.Trim();
+    private static string Required(string value, string field, int? maxLength = null)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new AppValidationException($"{field} is required.");
+        }
+
+        var trimmed = value.Trim();
+        if (maxLength is { } max && trimmed.Length > max)
+        {
+            throw new AppUnprocessableException($"{field} must be {max} characters or fewer.");
+        }
+
+        return trimmed;
+    }
+
+    private static string? OptionalWithMaxLength(string? value, string field, int maxLength)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return null;
+        }
+
+        if (trimmed.Length > maxLength)
+        {
+            throw new AppUnprocessableException($"{field} must be {maxLength} characters or fewer.");
+        }
+
+        return trimmed;
+    }
 }
