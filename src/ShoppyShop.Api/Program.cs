@@ -71,9 +71,18 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 }));
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
-    options.KnownIPNetworks.Clear();
+    options.ForwardLimit = builder.Configuration.GetValue("Proxy:ForwardLimit", 1);
+
     options.KnownProxies.Clear();
+    options.KnownIPNetworks.Clear();
+
+    var trustedNetworks = builder.Configuration.GetSection("Proxy:TrustedNetworks").Get<string[]>() ?? [];
+    foreach (var network in trustedNetworks)
+    {
+        options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+    }
+
+    options.ForwardedHeaders = trustedNetworks.Length == 0 ? ForwardedHeaders.None : ForwardedHeaders.XForwardedFor;
 });
 builder.Services.AddRateLimiter(options =>
 {

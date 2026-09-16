@@ -234,6 +234,14 @@ Important settings include:
 | `Anthropic:ApiKey`           | Anthropic API credential                  |
 | `Anthropic:Model`            | Anthropic model used by the assistant     |
 | `Features:AssistantEnabled`  | Controls assistant visibility in the UI   |
+| `Proxy:TrustedNetworks`      | CIDR ranges allowed to set `X-Forwarded-For` |
+| `Proxy:ForwardLimit`         | Forwarded-header hops to process (default `1`) |
+
+### Proxy trust boundary
+
+`Proxy:TrustedNetworks` is empty by default, which leaves the framework's own default (no forwarding trusted at all) in place: a client-supplied `X-Forwarded-For` has no effect, and the "auth" and "assistant" rate-limit policies key on the real connecting peer. This matters because the API sits behind Railway's edge in production, and those policies would otherwise be trivial to bypass by rotating the header.
+
+Before setting `Proxy:TrustedNetworks` in production, verify it against the actual deployed ingress rather than trusting a third party's documentation or community reports of its address range — send a request with a forged `X-Forwarded-For` through the real ingress and confirm it has no effect until the range is set, and no effect from an address outside it once set. Only then trust the configured range.
 
 To use the shopping assistant locally, store the Anthropic credential outside source control:
 
@@ -383,6 +391,8 @@ Anthropic__ApiKey
 Anthropic__Model
 Features__AssistantEnabled
 ```
+
+`Proxy__TrustedNetworks__0` (and `__1`, `__2`, ... for additional ranges) must be set to Railway's actual edge address range once that range has been verified against the deployed service — see "Proxy trust boundary" above. Left unset, `X-Forwarded-For` is ignored entirely, so the "auth" and "assistant" rate limits key on Railway's edge address rather than the real client, which under-partitions but does not fail open.
 
 ## Continuous deployment
 
