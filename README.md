@@ -46,28 +46,30 @@ Responsible for:
 
 Contains:
 
-* Application use cases
-* Service contracts
+* Service contracts, implemented in `ShoppyShop.Infrastructure`
 * Request and response DTOs
-* Business workflow orchestration
+* App-level exception types that `ShoppyShop.Api` maps to HTTP responses
+* A few small, stateless helpers: price-range presets, sort-value normalization, keyset pagination cursors, commerce limits
+
+This layer defines the shape of each use case. The use cases themselves — business rules and workflow orchestration — are implemented in `ShoppyShop.Infrastructure`.
 
 ### `ShoppyShop.Domain`
 
 Contains:
 
-* Domain entities
-* Value objects
-* Domain rules
-* Core business logic
+* Domain entities only (`ProductGroup`, `Product`, `Favorite`, `Order`, `OrderLine`, `OrderRequest`, `RefreshSession`)
+
+These are plain data holders with EF Core navigation properties; they carry no behavior or validation.
 
 ### `ShoppyShop.Infrastructure`
 
 Contains:
 
+* The service implementations behind every `ShoppyShop.Application` contract — checkout price recalculation, refresh-token rotation and reuse detection, catalogue validation, assistant tool-calling orchestration, bootstrap seeding, and the rest of the application's business rules and workflow orchestration
 * Entity Framework Core persistence
 * PostgreSQL integration
 * Identity implementation
-* External service implementations
+* External service implementations (the Anthropic API client)
 * Database migrations
 
 Additional projects:
