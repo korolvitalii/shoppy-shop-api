@@ -26,6 +26,9 @@ public sealed record ProductQuery(
     string? Sort = null,
     decimal? MinPrice = null,
     decimal? MaxPrice = null,
+    bool? InStock = null,
+    bool? IsNew = null,
+    bool? GiftWrappable = null,
     bool IncludeDeleted = false,
     string? Cursor = null,
     int? Limit = null);
@@ -33,11 +36,15 @@ public sealed record ProductQuery(
 /// <summary>
 /// One page of a product listing. <paramref name="NextCursor"/> is null on the last page — that is
 /// the only end-of-list signal, because a keyset query never learns the total row count (deliberately:
-/// a COUNT over the whole filtered set would cost more than the page itself).
+/// a COUNT over the whole filtered set would cost more than the page itself). <paramref name="TotalCount"/>
+/// is the one deliberate exception: it is only populated when <see cref="ProductQuery.Cursor"/> is null,
+/// i.e. once per filter change rather than once per page, so the UI can show "Showing X of Y" without
+/// paying for a COUNT on every "load more".
 /// </summary>
 public sealed record ProductPageDto(
     IReadOnlyCollection<ProductDto> Items,
-    string? NextCursor);
+    string? NextCursor,
+    int? TotalCount = null);
 
 public sealed record RegisterRequest(string Email, string Password, string? DisplayName);
 public sealed record LoginRequest(string Email, string Password);

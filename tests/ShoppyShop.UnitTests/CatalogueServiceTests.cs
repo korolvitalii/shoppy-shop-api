@@ -31,6 +31,57 @@ public sealed class CatalogueServiceTests
     }
 
     [Fact]
+    public async Task GetProductsAsyncFiltersByInStockIsNewAndGiftWrappable()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var dbContext = fixture.DbContext;
+        dbContext.ProductGroups.Add(new ProductGroup { Id = "beauty", Name = "Beauty", Description = "d", ImageUrl = "/g.jpg" });
+        dbContext.Products.AddRange(
+            Product("plain", price: 10m, salePrice: null),
+            Product("out-of-stock", price: 10m, salePrice: null, inStock: false),
+            Product("new-arrival", price: 10m, salePrice: null, isNew: true),
+            Product("giftable", price: 10m, salePrice: null, giftWrappable: true));
+        await dbContext.SaveChangesAsync();
+        var service = new CatalogueService(dbContext);
+
+        var inStockOnly = await service.GetProductsAsync(new ProductQuery(InStock: true), CancellationToken.None);
+        Assert.Equal(["giftable", "new-arrival", "plain"], inStockOnly.Items.Select(x => x.Id));
+
+        var newOnly = await service.GetProductsAsync(new ProductQuery(IsNew: true), CancellationToken.None);
+        Assert.Equal(["new-arrival"], newOnly.Items.Select(x => x.Id));
+
+        var giftWrappableOnly = await service.GetProductsAsync(new ProductQuery(GiftWrappable: true), CancellationToken.None);
+        Assert.Equal(["giftable"], giftWrappableOnly.Items.Select(x => x.Id));
+
+        // Explicitly false, like an absent param, means "don't filter" — a checkbox left unchecked
+        // shows everything, it does not exclude the products it would otherwise select.
+        var unfiltered = await service.GetProductsAsync(new ProductQuery(InStock: false), CancellationToken.None);
+        Assert.Equal(4, unfiltered.Items.Count);
+    }
+
+    [Fact]
+    public async Task GetProductsAsyncOnlyComputesTotalCountOnTheFirstPageOfAFilterSet()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var dbContext = fixture.DbContext;
+        dbContext.ProductGroups.Add(new ProductGroup { Id = "beauty", Name = "Beauty", Description = "d", ImageUrl = "/g.jpg" });
+        dbContext.Products.AddRange(
+            Product("p1", price: 10m, salePrice: null),
+            Product("p2", price: 20m, salePrice: null),
+            Product("p3", price: 30m, salePrice: null));
+        await dbContext.SaveChangesAsync();
+        var service = new CatalogueService(dbContext);
+
+        var first = await service.GetProductsAsync(new ProductQuery(Limit: 2), CancellationToken.None);
+        Assert.Equal(3, first.TotalCount);
+
+        var second = await service.GetProductsAsync(
+            new ProductQuery(Cursor: first.NextCursor, Limit: 2),
+            CancellationToken.None);
+        Assert.Null(second.TotalCount);
+    }
+
+    [Fact]
     public async Task GetGroupsAsyncCountsOnlyActiveProductsUnlessDeletedAreIncluded()
     {
         using var fixture = new SqliteAppDbContextFixture();
@@ -255,7 +306,10 @@ public sealed class CatalogueServiceTests
         decimal? salePrice,
         bool isDeleted = false,
         string? name = null,
-        string groupId = "beauty") => new()
+        string groupId = "beauty",
+        bool inStock = true,
+        bool isNew = false,
+        bool giftWrappable = false) => new()
         {
             Id = id,
             GroupId = groupId,
@@ -265,7 +319,9 @@ public sealed class CatalogueServiceTests
             ImageUrl = "/product.jpg",
             Price = price,
             SalePrice = salePrice,
-            InStock = true,
+            InStock = inStock,
+            IsNew = isNew,
+            GiftWrappable = giftWrappable,
             IsDeleted = isDeleted,
         };
 }

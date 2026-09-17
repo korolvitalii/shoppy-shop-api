@@ -104,6 +104,27 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
             products = products.Where(x => (x.SalePrice ?? x.Price) <= query.MaxPrice);
         }
 
+        if (query.InStock is true)
+        {
+            products = products.Where(x => x.InStock);
+        }
+
+        if (query.IsNew is true)
+        {
+            products = products.Where(x => x.IsNew);
+        }
+
+        if (query.GiftWrappable is true)
+        {
+            products = products.Where(x => x.GiftWrappable);
+        }
+
+        // The total is only worth paying for once per filter change, not once per page: a cursor
+        // means this is a later page of a listing the client already counted, so skip it there.
+        int? totalCount = query.Cursor is null
+            ? await products.AsNoTracking().CountAsync(cancellationToken)
+            : null;
+
         products = ApplyOrder(products, sort);
 
         // Fetching one row past the page is how we learn whether a further page exists. The
@@ -116,12 +137,12 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
 
         if (rows.Length <= limit)
         {
-            return new ProductPageDto(rows, null);
+            return new ProductPageDto(rows, null, totalCount);
         }
 
         var items = rows[..limit];
         var last = items[^1];
-        return new ProductPageDto(items, new ProductCursor(sort, SortKey(sort, last), last.Id).Encode());
+        return new ProductPageDto(items, new ProductCursor(sort, SortKey(sort, last), last.Id).Encode(), totalCount);
     }
 
     /// <summary>

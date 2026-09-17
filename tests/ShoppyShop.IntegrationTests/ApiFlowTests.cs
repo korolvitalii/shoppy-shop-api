@@ -83,6 +83,38 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task ProductListingFiltersByNewAndGiftWrappableAndReportsTotalCountOnceOnly()
+    {
+        await Factory.Services.InitializeDatabaseAsync(Factory.Services.GetRequiredService<IConfiguration>());
+
+        // The frontend seed's isNew/giftWrappable values come from a deterministic 1-in-6 / 1-in-3
+        // spread over the product list, so both filters are guaranteed to select a non-empty,
+        // non-total subset of the 54 seeded products.
+        var newOnly = await Client.GetFromJsonAsync<ProductPageDto>("/api/products?isNew=true&limit=100", JsonOptions);
+        Assert.NotNull(newOnly);
+        Assert.All(newOnly.Items, product => Assert.True(product.IsNew));
+        Assert.NotEmpty(newOnly.Items);
+        Assert.NotEqual(54, newOnly.Items.Count);
+
+        var giftWrappableOnly = await Client.GetFromJsonAsync<ProductPageDto>("/api/products?giftWrappable=true&limit=100", JsonOptions);
+        Assert.NotNull(giftWrappableOnly);
+        Assert.All(giftWrappableOnly.Items, product => Assert.True(product.GiftWrappable));
+        Assert.NotEmpty(giftWrappableOnly.Items);
+
+        // Total count is only worth its cost once per filter change: present on the first page,
+        // absent once a cursor says this is a later page of the same listing.
+        var firstPage = await Client.GetFromJsonAsync<ProductPageDto>("/api/products", JsonOptions);
+        Assert.NotNull(firstPage);
+        Assert.Equal(54, firstPage.TotalCount);
+
+        var secondPage = await Client.GetFromJsonAsync<ProductPageDto>(
+            $"/api/products?cursor={Uri.EscapeDataString(firstPage.NextCursor!)}",
+            JsonOptions);
+        Assert.NotNull(secondPage);
+        Assert.Null(secondPage.TotalCount);
+    }
+
+    [Fact]
     public async Task UpgradingAnExistingDatabaseBackfillsNewFlagsToMatchTheSeed()
     {
         // Simulates a database that already had rows before the flags migration existed: migrate up

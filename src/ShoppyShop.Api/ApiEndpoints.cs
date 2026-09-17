@@ -34,6 +34,9 @@ public static class ApiEndpoints
             string? price,
             decimal? minPrice,
             decimal? maxPrice,
+            bool? inStock,
+            bool? isNew,
+            bool? giftWrappable,
             string? cursor,
             int? limit,
             ICatalogueService service,
@@ -41,7 +44,7 @@ public static class ApiEndpoints
         {
             (minPrice, maxPrice) = PricePresets.Resolve(price, minPrice, maxPrice);
             return service.GetProductsAsync(
-                new ProductQuery(search, sort, minPrice, maxPrice, Cursor: cursor, Limit: limit),
+                new ProductQuery(search, sort, minPrice, maxPrice, inStock, isNew, giftWrappable, Cursor: cursor, Limit: limit),
                 cancellationToken);
         });
 
@@ -52,6 +55,9 @@ public static class ApiEndpoints
             string? price,
             decimal? minPrice,
             decimal? maxPrice,
+            bool? inStock,
+            bool? isNew,
+            bool? giftWrappable,
             string? cursor,
             int? limit,
             ICatalogueService service,
@@ -60,7 +66,7 @@ public static class ApiEndpoints
             (minPrice, maxPrice) = PricePresets.Resolve(price, minPrice, maxPrice);
             return service.GetGroupProductsAsync(
                 groupId,
-                new ProductQuery(search, sort, minPrice, maxPrice, Cursor: cursor, Limit: limit),
+                new ProductQuery(search, sort, minPrice, maxPrice, inStock, isNew, giftWrappable, Cursor: cursor, Limit: limit),
                 cancellationToken);
         });
 
