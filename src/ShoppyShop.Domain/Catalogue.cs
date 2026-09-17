@@ -23,6 +23,8 @@ public sealed class Product
     public decimal Price { get; set; }
     public decimal? SalePrice { get; set; }
     public bool InStock { get; set; }
+    public bool IsNew { get; set; }
+    public bool GiftWrappable { get; set; }
     public bool IsDeleted { get; set; }
     public ProductGroup? Group { get; set; }
 }

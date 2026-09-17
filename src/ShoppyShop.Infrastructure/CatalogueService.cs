@@ -224,5 +224,7 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
             product.ImageUrl,
             product.Price,
             product.SalePrice,
-            product.InStock);
+            product.InStock,
+            product.IsNew,
+            product.GiftWrappable);
 }

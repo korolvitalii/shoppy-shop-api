@@ -120,6 +120,8 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         product.Price = request.Price;
         product.SalePrice = request.SalePrice;
         product.InStock = request.InStock;
+        product.IsNew = request.IsNew;
+        product.GiftWrappable = request.GiftWrappable;
         product.IsDeleted = false;
         await dbContext.SaveChangesAsync(cancellationToken);
         return new ProductDto(
@@ -131,7 +133,9 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
             product.ImageUrl,
             product.Price,
             product.SalePrice,
-            product.InStock);
+            product.InStock,
+            product.IsNew,
+            product.GiftWrappable);
     }
 
     public async Task DeleteProductAsync(string id, CancellationToken cancellationToken)

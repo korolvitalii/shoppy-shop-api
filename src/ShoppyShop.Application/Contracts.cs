@@ -17,7 +17,9 @@ public sealed record ProductDto(
     string ImageUrl,
     decimal Price,
     decimal? SalePrice,
-    bool InStock);
+    bool InStock,
+    bool IsNew,
+    bool GiftWrappable);
 
 public sealed record ProductQuery(
     string? Search = null,
@@ -105,7 +107,9 @@ public sealed record ProductWriteRequest(
     string ImageUrl,
     decimal Price,
     decimal? SalePrice,
-    bool InStock);
+    bool InStock,
+    bool IsNew = false,
+    bool GiftWrappable = false);
 
 public sealed record FeatureConfigDto(bool AssistantEnabled);
 

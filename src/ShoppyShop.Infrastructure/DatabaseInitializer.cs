@@ -72,6 +72,8 @@ public static class DatabaseInitializer
             Price = product.Price,
             SalePrice = product.SalePrice,
             InStock = product.InStock,
+            IsNew = product.IsNew,
+            GiftWrappable = product.GiftWrappable,
         }).ToArray();
 
         dbContext.ProductGroups.AddRange(groups);
@@ -143,5 +145,7 @@ public static class DatabaseInitializer
         string ImageUrl,
         decimal Price,
         decimal? SalePrice,
-        bool InStock);
+        bool InStock,
+        bool IsNew = false,
+        bool GiftWrappable = false);
 }

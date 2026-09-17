@@ -5,6 +5,8 @@ using System.Text.Json;
 
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -78,6 +80,82 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
 
         Assert.Equal(54, ids.Count);
         Assert.Equal(54, ids.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
+    public async Task UpgradingAnExistingDatabaseBackfillsNewFlagsToMatchTheSeed()
+    {
+        // Simulates a database that already had rows before the flags migration existed: migrate up
+        // to just before it, insert rows under the old schema, then let the flags migration run and
+        // check its backfill against the same ids the catalogue.json seed assigns them — the two must
+        // agree, or a database that upgrades in place disagrees with one seeded fresh from that file.
+        //
+        // Deliberately uses several ids spanning multiple groups and every isNew/giftWrappable
+        // combination present in the seed, rather than a single row: a lone fixture cannot tell an
+        // explicit id-keyed backfill apart from a row-order/row-count based one (e.g. the original
+        // ROW_NUMBER() % 6 bug), because with only one row in the table almost any such formula
+        // degenerates to the same output. Four ids across three groups makes that coincidence
+        // vanishingly unlikely while still catching the exact regression this test was added for.
+        //
+        // This needs its own container rather than the class's shared one: building an ApiFactory
+        // against a database — which every other test does — runs Program.cs's own startup
+        // migrate-and-seed before the test body gets a chance to stop at a partial migration.
+        await using var upgradePostgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
+        await upgradePostgres.StartAsync();
+        var connectionString = upgradePostgres.GetConnectionString();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connectionString).Options;
+
+        await using (var dbContext = new AppDbContext(options))
+        {
+            var migrator = ((IInfrastructure<IServiceProvider>)dbContext.Database).Instance
+                .GetRequiredService<IMigrator>();
+            await migrator.MigrateAsync("20260906183730_ProductPaginationIndexes");
+
+            await dbContext.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO "ProductGroups" ("Id","Name","Description","ImageUrl","DisplayOrder","IsDeleted")
+                VALUES
+                    ('beauty','Beauty','d','/g.jpg',0,false),
+                    ('electronics','Electronics','d','/g.jpg',1,false),
+                    ('home','Home','d','/g.jpg',2,false)
+                """);
+            await dbContext.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO "Products" ("Id","GroupId","Name","Brand","Description","ImageUrl","Price","InStock","IsDeleted")
+                VALUES
+                    ('beauty-1','beauty','Pre-existing product','Brand','d','/p.jpg',10,true,false),
+                    ('beauty-2','beauty','Pre-existing product','Brand','d','/p.jpg',10,true,false),
+                    ('electronics-4','electronics','Pre-existing product','Brand','d','/p.jpg',10,true,false),
+                    ('home-1','home','Pre-existing product','Brand','d','/p.jpg',10,true,false)
+                """);
+        }
+
+        await using (var dbContext = new AppDbContext(options))
+        {
+            var migrator = ((IInfrastructure<IServiceProvider>)dbContext.Database).Instance
+                .GetRequiredService<IMigrator>();
+            await migrator.MigrateAsync();
+        }
+
+        await using (var dbContext = new AppDbContext(options))
+        {
+            var products = await dbContext.Products.IgnoreQueryFilters()
+                .Where(x => new[] { "beauty-1", "beauty-2", "electronics-4", "home-1" }.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id);
+
+            // Expected values taken from catalogue.json for each id.
+            Assert.True(products["beauty-1"].IsNew);
+            Assert.True(products["beauty-1"].GiftWrappable);
+
+            Assert.False(products["beauty-2"].IsNew);
+            Assert.False(products["beauty-2"].GiftWrappable);
+
+            Assert.True(products["electronics-4"].IsNew);
+            Assert.True(products["electronics-4"].GiftWrappable);
+
+            Assert.False(products["home-1"].IsNew);
+            Assert.True(products["home-1"].GiftWrappable);
+        }
     }
 
     [Fact]
