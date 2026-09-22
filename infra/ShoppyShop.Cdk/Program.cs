@@ -13,6 +13,8 @@ public static class Program
             throw new InvalidOperationException("CDK context 'notificationEmail' is required (use -c notificationEmail=you@example.com).");
         }
 
+        var trustedProxyNetworks = ParseTrustedProxyNetworks(app.Node.TryGetContext("trustedProxyNetworks") as string);
+
         var environment = new Amazon.CDK.Environment
         {
             Account = System.Environment.GetEnvironmentVariable("CDK_DEFAULT_ACCOUNT"),
@@ -34,10 +36,38 @@ public static class Program
             FrontendOrigin = app.Node.TryGetContext("frontendOrigin") as string ?? "https://zeta.vercel.app",
             AdminEmail = app.Node.TryGetContext("adminEmail") as string ?? notificationEmail,
             ImageTag = app.Node.TryGetContext("imageTag") as string ?? "latest",
+            TrustedProxyNetworks = trustedProxyNetworks,
             Repository = foundation.Repository,
             Env = environment,
         });
 
         app.Synth();
+    }
+
+    /// <summary>
+    /// Required, and checked here rather than at container start: the API refuses to boot in
+    /// Production without a trusted proxy network, so a missing or malformed value would otherwise
+    /// surface only as a failed App Runner deployment.
+    /// </summary>
+    public static IReadOnlyList<string> ParseTrustedProxyNetworks(string? value)
+    {
+        var networks = (value ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (networks.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "CDK context 'trustedProxyNetworks' is required: the App Runner ingress CIDRs, comma-separated " +
+                "(use -c trustedProxyNetworks=<cidr>[,<cidr>...]). The API will not start in Production without it.");
+        }
+
+        foreach (var network in networks)
+        {
+            if (!System.Net.IPNetwork.TryParse(network, out _))
+            {
+                throw new InvalidOperationException($"CDK context 'trustedProxyNetworks' contains an invalid CIDR: '{network}'.");
+            }
+        }
+
+        return networks;
     }
 }

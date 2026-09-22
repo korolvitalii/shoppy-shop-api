@@ -241,7 +241,11 @@ Important settings include:
 
 ### Proxy trust boundary
 
-`Proxy:TrustedNetworks` is empty by default, which leaves the framework's own default (no forwarding trusted at all) in place: a client-supplied `X-Forwarded-For` has no effect, and the "auth" and "assistant" rate-limit policies key on the real connecting peer. This matters because the API sits behind Railway's edge in production, and those policies would otherwise be trivial to bypass by rotating the header.
+`Proxy:TrustedNetworks` is empty by default, which leaves the framework's own default (no forwarding trusted at all) in place: a client-supplied `X-Forwarded-For` has no effect, and the "auth" and "assistant" rate-limit policies key on the real connecting peer. This matters because the API sits behind a proxy edge in production, and those policies would otherwise be trivial to bypass by rotating the header.
+
+**The API refuses to start in Production with `Proxy:TrustedNetworks` unset.** Behind a proxy, an empty list means `RemoteIpAddress` is the ingress for every caller on Earth, so every per-IP partition collapses into a single global bucket — "auth" becomes 10 requests per minute for the whole world across register, login and refresh combined, and "assistant" 20 per hour. That is a self-inflicted global throttle rather than a security nicety, so it fails closed at startup instead of degrading quietly. Other environments are unaffected.
+
+When the list is non-empty the API also honours `X-Forwarded-Proto`, so `UseHttpsRedirection` sees the original scheme rather than the plain HTTP the proxy forwards after terminating TLS.
 
 Before setting `Proxy:TrustedNetworks` in production, verify it against the actual deployed ingress rather than trusting a third party's documentation or community reports of its address range — send a request with a forged `X-Forwarded-For` through the real ingress and confirm it has no effect until the range is set, and no effect from an address outside it once set. Only then trust the configured range.
 
@@ -396,7 +400,9 @@ Anthropic__Model
 Features__AssistantEnabled
 ```
 
-`Proxy__TrustedNetworks__0` (and `__1`, `__2`, ... for additional ranges) must be set to Railway's actual edge address range once that range has been verified against the deployed service — see "Proxy trust boundary" above. Left unset, `X-Forwarded-For` is ignored entirely, so the "auth" and "assistant" rate limits key on Railway's edge address rather than the real client, which under-partitions but does not fail open.
+`Proxy__TrustedNetworks__0` (and `__1`, `__2`, ... for additional ranges) must be set to the deployed ingress's actual edge address range, verified against the running service — see "Proxy trust boundary" above. **This is required**: in Production the API now fails to start without it, rather than silently collapsing every per-IP rate limit into one global bucket.
+
+> **Hosting note.** This section describes Railway, which is what `.github/workflows/deploy.yml` actually deploys to. `infra/ShoppyShop.Cdk` builds an AWS App Runner + RDS stack instead, and the two have drifted apart — the edge range above belongs to whichever one is live. Settle that before setting `Proxy__TrustedNetworks__0`.
 
 ## Continuous deployment
 
@@ -424,6 +430,8 @@ Production application secrets remain in Railway and are not copied into GitHub 
 The running API uses Railway and Neon. The application no longer depends on AWS App Runner or Amazon RDS.
 
 The `infra/ShoppyShop.Cdk` project is retained in the repository and synthesized in CI, but it is not used by the current Railway deployment.
+
+If that stack is ever deployed, it requires `-c trustedProxyNetworks=<cidr>[,<cidr>...]` — the App Runner ingress range, verified as described under "Proxy trust boundary". Synthesis fails without it, because the API it deploys would refuse to start. CI passes a documentation-only range (`192.0.2.0/24`) purely so synthesis compiles; it is not a real value.
 
 Railway usage and Neon quotas should be monitored in their provider dashboards. The API and database are single-region services without multi-region failover.
 

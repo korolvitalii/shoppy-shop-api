@@ -42,7 +42,7 @@ jobs:
       - name: Verify formatting
         run: dotnet format ShoppyShop.slnx --verify-no-changes --no-restore
       - name: Synthesize AWS infrastructure
-        run: npx cdk synth -c notificationEmail=ci@example.invalid -c imageTag=ci --quiet
+        run: npx cdk synth -c notificationEmail=ci@example.invalid -c imageTag=ci -c trustedProxyNetworks=192.0.2.0/24 --quiet
       - name: Build container
         run: docker build --tag shoppy-shop-api:ci .
       - name: Scan container

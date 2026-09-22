@@ -79,6 +79,14 @@ public sealed class ShoppyShopInfrastructureProps : StackProps
     public required string AdminEmail { get; init; }
     public required string ImageTag { get; init; }
     public required IRepository Repository { get; init; }
+
+    /// <summary>
+    /// CIDRs of the App Runner ingress, passed to the API as <c>Proxy__TrustedNetworks__N</c>. The
+    /// API refuses to start in Production without at least one - otherwise every caller shares the
+    /// ingress address and each per-IP rate limit collapses into a single global bucket. App Runner
+    /// does not publish this range, so it is supplied at deploy time rather than guessed here.
+    /// </summary>
+    public required IReadOnlyList<string> TrustedProxyNetworks { get; init; }
 }
 
 public sealed class ShoppyShopInfrastructure : Stack
@@ -217,7 +225,10 @@ public sealed class ShoppyShopInfrastructure : Stack
                             Variable("BootstrapAdmin__Email", props.AdminEmail),
                             Variable("Cors__AllowedOrigins__0", props.FrontendOrigin),
                             Variable("Anthropic__Model", "claude-haiku-4-5"),
-                        },
+                        }
+                        .Concat(props.TrustedProxyNetworks.Select(
+                            (network, index) => Variable($"Proxy__TrustedNetworks__{index}", network)))
+                        .ToArray(),
                         RuntimeEnvironmentSecrets = new[]
                         {
                             Variable("Database__Username", $"{database.Secret.SecretArn}:username::"),
