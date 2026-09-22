@@ -39,6 +39,10 @@ if (Encoding.UTF8.GetByteCount(jwt.SigningKey) < 32)
 }
 
 builder.Services.AddProblemDetails();
+// Runs the DataAnnotations on the request records in ShoppyShop.Application before an endpoint sees
+// them, so malformed input is a 400 with a field map rather than whatever the first service to
+// dereference it happens to throw.
+builder.Services.AddValidation();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddOpenApi(options => options.AddDocumentTransformer<BearerSecuritySchemeTransformer>());
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -82,8 +86,27 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
     }
 
-    options.ForwardedHeaders = trustedNetworks.Length == 0 ? ForwardedHeaders.None : ForwardedHeaders.XForwardedFor;
+    // The scheme travels with the address or not at all: UseHttpsRedirection below reads
+    // Request.Scheme, and behind a proxy that terminates TLS and forwards plain HTTP that is "http"
+    // for every request unless X-Forwarded-Proto is honoured. Trusting one header and not the other
+    // leaves the redirect middleware working from a scheme it can never see corrected.
+    options.ForwardedHeaders = trustedNetworks.Length == 0
+        ? ForwardedHeaders.None
+        : ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
 });
+
+// Fail closed rather than quietly degrading. With no trusted network the forwarded headers are
+// ignored (above), so RemoteIpAddress is the ingress for every caller and each per-IP partition
+// below collapses into one global bucket: "auth" becomes 10 requests per minute for the whole world
+// across register, login and refresh together, and "assistant" 20 per hour. That is an availability
+// failure bad enough to be worth refusing to start over.
+if (builder.Environment.IsProduction()
+    && builder.Configuration.GetSection("Proxy:TrustedNetworks").Get<string[]>() is not { Length: > 0 })
+{
+    throw new InvalidOperationException(
+        "Proxy:TrustedNetworks must be set in Production. Without it every request appears to " +
+        "originate from the ingress and the per-IP rate limits collapse into a single bucket.");
+}
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -116,6 +139,30 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromHours(1),
             QueueLimit = 0,
         }));
+    // The catalogue is the only unauthenticated surface where the caller sizes the server's work
+    // (see the search bounds in CatalogueService), so it needs a ceiling of its own. Set generously:
+    // a storefront session legitimately fires a burst of these while a shopper filters and pages.
+    options.AddPolicy("catalogue", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+    // Partitioned by account, like "favorites": change-password verifies a password, so it wants
+    // the same abuse ceiling as login, but it is authenticated and the subject being protected is
+    // one account rather than one address.
+    options.AddPolicy("password", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+            ?? context.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 var app = builder.Build();
 app.UseForwardedHeaders();
@@ -140,10 +187,11 @@ app.MapGet("/health/ready", async (AppDbContext dbContext, CancellationToken can
     .ExcludeFromDescription();
 app.MapApiEndpoints();
 
-if (builder.Configuration.GetValue("Database:AutoMigrate", true))
-{
-    await app.Services.InitializeDatabaseAsync(builder.Configuration);
-}
+// Always run. The initializer migrates *and* seeds, and the Customer role it creates is a hard
+// prerequisite for registration - gating the whole call on AutoMigrate meant the documented
+// "apply migrations yourself" route produced a schema with no roles, where the first registration
+// threw after having already committed the user row. AutoMigrate now gates only the migration.
+await app.Services.InitializeDatabaseAsync(builder.Configuration);
 
 app.Run();
 

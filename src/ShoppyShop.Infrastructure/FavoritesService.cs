@@ -22,7 +22,9 @@ public sealed class FavoritesService(AppDbContext dbContext, TimeProvider timePr
                 x.Product.ImageUrl,
                 x.Product.Price,
                 x.Product.SalePrice,
-                x.Product.InStock))
+                x.Product.InStock,
+                x.Product.IsNew,
+                x.Product.GiftWrappable))
             .ToArrayAsync(cancellationToken);
 
     public async Task AddAsync(Guid userId, string productId, CancellationToken cancellationToken)

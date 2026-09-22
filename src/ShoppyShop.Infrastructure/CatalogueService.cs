@@ -8,10 +8,19 @@ using ShoppyShop.Domain;
 
 namespace ShoppyShop.Infrastructure;
 
-public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
+public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogueService
 {
     private const int DefaultLimit = 24;
     private const int MaxLimit = 100;
+
+    // Search is the one input on this endpoint whose cost the caller chooses. Every term adds an
+    // ILIKE over three columns, and '%term%' leads with a wildcard so no btree index applies and
+    // each one is a sequential scan. Unbounded, an anonymous caller could hand the planner a few
+    // hundred predicates over a thousand-odd column comparisons and have them run twice - once for
+    // the count below, once for the page. These two bounds are the cap that was missing; the long
+    // term answer is a pg_trgm GIN index on Name/Brand, which makes ILIKE '%x%' indexable.
+    private const int MaxSearchLength = 120;
+    private const int MaxSearchTerms = 6;
 
     public async Task<IReadOnlyCollection<ProductGroupDto>> GetGroupsAsync(bool includeDeleted, CancellationToken cancellationToken)
     {
@@ -73,10 +82,16 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
-            var terms = Regex.Split(query.Search.Trim(), @"[^\p{L}\p{N}]+")
+            if (query.Search.Length > MaxSearchLength)
+            {
+                throw Invalid("search", $"Search must be {MaxSearchLength} characters or fewer.");
+            }
+
+            var terms = SearchTermPattern().Split(query.Search.Trim())
                 .Where(term => term.Length > 0)
                 .Select(NormalizeSearchTerm)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(MaxSearchTerms)
                 .ToArray();
 
             foreach (var term in terms)
@@ -104,6 +119,27 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
             products = products.Where(x => (x.SalePrice ?? x.Price) <= query.MaxPrice);
         }
 
+        if (query.InStock is true)
+        {
+            products = products.Where(x => x.InStock);
+        }
+
+        if (query.IsNew is true)
+        {
+            products = products.Where(x => x.IsNew);
+        }
+
+        if (query.GiftWrappable is true)
+        {
+            products = products.Where(x => x.GiftWrappable);
+        }
+
+        // The total is only worth paying for once per filter change, not once per page: a cursor
+        // means this is a later page of a listing the client already counted, so skip it there.
+        int? totalCount = query.Cursor is null
+            ? await products.AsNoTracking().CountAsync(cancellationToken)
+            : null;
+
         products = ApplyOrder(products, sort);
 
         // Fetching one row past the page is how we learn whether a further page exists. The
@@ -116,12 +152,12 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
 
         if (rows.Length <= limit)
         {
-            return new ProductPageDto(rows, null);
+            return new ProductPageDto(rows, null, totalCount);
         }
 
         var items = rows[..limit];
         var last = items[^1];
-        return new ProductPageDto(items, new ProductCursor(sort, SortKey(sort, last), last.Id).Encode());
+        return new ProductPageDto(items, new ProductCursor(sort, SortKey(sort, last), last.Id).Encode(), totalCount);
     }
 
     /// <summary>
@@ -211,6 +247,15 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
     private static AppValidationException Invalid(string field, string message) =>
         new(message, new Dictionary<string, string[]> { [field] = [message] });
 
+    /// <summary>
+    /// Source-generated rather than a <see cref="Regex"/> literal: the static <c>Regex.Split</c>
+    /// overload does cache its compiled pattern, so this is not about avoiding a recompile - it is
+    /// about skipping the per-call cache lookup and the interpreted matcher, and matching how
+    /// <c>AssistantService</c> already holds its pattern in a static field.
+    /// </summary>
+    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
+    private static partial Regex SearchTermPattern();
+
     private static string NormalizeSearchTerm(string term) =>
         term.Length > 3 && term.EndsWith('s') ? term[..^1] : term;
 
@@ -224,5 +269,7 @@ public sealed class CatalogueService(AppDbContext dbContext) : ICatalogueService
             product.ImageUrl,
             product.Price,
             product.SalePrice,
-            product.InStock);
+            product.InStock,
+            product.IsNew,
+            product.GiftWrappable);
 }

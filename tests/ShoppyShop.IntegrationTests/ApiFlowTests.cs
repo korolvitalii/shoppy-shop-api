@@ -5,6 +5,8 @@ using System.Text.Json;
 
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -78,6 +80,114 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
 
         Assert.Equal(54, ids.Count);
         Assert.Equal(54, ids.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
+    public async Task ProductListingFiltersByNewAndGiftWrappableAndReportsTotalCountOnceOnly()
+    {
+        await Factory.Services.InitializeDatabaseAsync(Factory.Services.GetRequiredService<IConfiguration>());
+
+        // The frontend seed's isNew/giftWrappable values come from a deterministic 1-in-6 / 1-in-3
+        // spread over the product list, so both filters are guaranteed to select a non-empty,
+        // non-total subset of the 54 seeded products.
+        var newOnly = await Client.GetFromJsonAsync<ProductPageDto>("/api/products?isNew=true&limit=100", JsonOptions);
+        Assert.NotNull(newOnly);
+        Assert.All(newOnly.Items, product => Assert.True(product.IsNew));
+        Assert.NotEmpty(newOnly.Items);
+        Assert.NotEqual(54, newOnly.Items.Count);
+
+        var giftWrappableOnly = await Client.GetFromJsonAsync<ProductPageDto>("/api/products?giftWrappable=true&limit=100", JsonOptions);
+        Assert.NotNull(giftWrappableOnly);
+        Assert.All(giftWrappableOnly.Items, product => Assert.True(product.GiftWrappable));
+        Assert.NotEmpty(giftWrappableOnly.Items);
+
+        // Total count is only worth its cost once per filter change: present on the first page,
+        // absent once a cursor says this is a later page of the same listing.
+        var firstPage = await Client.GetFromJsonAsync<ProductPageDto>("/api/products", JsonOptions);
+        Assert.NotNull(firstPage);
+        Assert.Equal(54, firstPage.TotalCount);
+
+        var secondPage = await Client.GetFromJsonAsync<ProductPageDto>(
+            $"/api/products?cursor={Uri.EscapeDataString(firstPage.NextCursor!)}",
+            JsonOptions);
+        Assert.NotNull(secondPage);
+        Assert.Null(secondPage.TotalCount);
+    }
+
+    [Fact]
+    public async Task UpgradingAnExistingDatabaseBackfillsNewFlagsToMatchTheSeed()
+    {
+        // Simulates a database that already had rows before the flags migration existed: migrate up
+        // to just before it, insert rows under the old schema, then let the flags migration run and
+        // check its backfill against the same ids the catalogue.json seed assigns them — the two must
+        // agree, or a database that upgrades in place disagrees with one seeded fresh from that file.
+        //
+        // Deliberately uses several ids spanning multiple groups and every isNew/giftWrappable
+        // combination present in the seed, rather than a single row: a lone fixture cannot tell an
+        // explicit id-keyed backfill apart from a row-order/row-count based one (e.g. the original
+        // ROW_NUMBER() % 6 bug), because with only one row in the table almost any such formula
+        // degenerates to the same output. Four ids across three groups makes that coincidence
+        // vanishingly unlikely while still catching the exact regression this test was added for.
+        //
+        // This needs its own container rather than the class's shared one: building an ApiFactory
+        // against a database — which every other test does — runs Program.cs's own startup
+        // migrate-and-seed before the test body gets a chance to stop at a partial migration.
+        await using var upgradePostgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
+        await upgradePostgres.StartAsync();
+        var connectionString = upgradePostgres.GetConnectionString();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connectionString).Options;
+
+        await using (var dbContext = new AppDbContext(options))
+        {
+            var migrator = ((IInfrastructure<IServiceProvider>)dbContext.Database).Instance
+                .GetRequiredService<IMigrator>();
+            await migrator.MigrateAsync("20260906183730_ProductPaginationIndexes");
+
+            await dbContext.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO "ProductGroups" ("Id","Name","Description","ImageUrl","DisplayOrder","IsDeleted")
+                VALUES
+                    ('beauty','Beauty','d','/g.jpg',0,false),
+                    ('electronics','Electronics','d','/g.jpg',1,false),
+                    ('home','Home','d','/g.jpg',2,false)
+                """);
+            await dbContext.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO "Products" ("Id","GroupId","Name","Brand","Description","ImageUrl","Price","InStock","IsDeleted")
+                VALUES
+                    ('beauty-1','beauty','Pre-existing product','Brand','d','/p.jpg',10,true,false),
+                    ('beauty-2','beauty','Pre-existing product','Brand','d','/p.jpg',10,true,false),
+                    ('electronics-4','electronics','Pre-existing product','Brand','d','/p.jpg',10,true,false),
+                    ('home-1','home','Pre-existing product','Brand','d','/p.jpg',10,true,false)
+                """);
+        }
+
+        await using (var dbContext = new AppDbContext(options))
+        {
+            var migrator = ((IInfrastructure<IServiceProvider>)dbContext.Database).Instance
+                .GetRequiredService<IMigrator>();
+            await migrator.MigrateAsync();
+        }
+
+        await using (var dbContext = new AppDbContext(options))
+        {
+            var products = await dbContext.Products.IgnoreQueryFilters()
+                .Where(x => new[] { "beauty-1", "beauty-2", "electronics-4", "home-1" }.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id);
+
+            // Expected values taken from catalogue.json for each id.
+            Assert.True(products["beauty-1"].IsNew);
+            Assert.True(products["beauty-1"].GiftWrappable);
+
+            Assert.False(products["beauty-2"].IsNew);
+            Assert.False(products["beauty-2"].GiftWrappable);
+
+            Assert.True(products["electronics-4"].IsNew);
+            Assert.True(products["electronics-4"].GiftWrappable);
+
+            Assert.False(products["home-1"].IsNew);
+            Assert.True(products["home-1"].GiftWrappable);
+        }
     }
 
     [Fact]
@@ -542,6 +652,182 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
             HttpStatusCode.NoContent,
             (await Client.DeleteAsync("/api/admin/product-groups/test-group")).StatusCode);
     }
+
+    [Fact]
+    public async Task OrderHistoryIsCappedAndSeeksPastTheBeforeCutoff()
+    {
+        // Covered here rather than as a unit test: the window orders by CreatedAt, and SQLite - which
+        // the unit tests run on - cannot ORDER BY a DateTimeOffset at all.
+        var register = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest("history@example.test", "Strong!Password123", null),
+            JsonOptions);
+        register.EnsureSuccessStatusCode();
+        var auth = await register.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.AccessToken);
+
+        var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            for (var index = 0; index < 60; index++)
+            {
+                dbContext.Orders.Add(HistoryOrder(auth.User.Id, start.AddMinutes(index)));
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        // Unbounded, this returned all 60 with every line attached.
+        var capped = await Client.GetFromJsonAsync<OrderDto[]>("/api/orders", JsonOptions);
+        Assert.Equal(50, capped!.Length);
+        Assert.Equal(start.AddMinutes(59), capped[0].CreatedAt);
+        Assert.Equal(start.AddMinutes(10), capped[^1].CreatedAt);
+
+        var limited = await Client.GetFromJsonAsync<OrderDto[]>("/api/orders?limit=5", JsonOptions);
+        Assert.Equal(5, limited!.Length);
+
+        // The cursor is the last item of the previous page - CreatedAt and id together, not
+        // CreatedAt alone (see OrderHistorySeeksThroughOrdersSharingTheSameTimestamp for why).
+        var lastOfFirstPage = capped[^1];
+        var cutoff = Uri.EscapeDataString(lastOfFirstPage.CreatedAt.ToString("O"));
+        var older = await Client.GetFromJsonAsync<OrderDto[]>(
+            $"/api/orders?limit=3&before={cutoff}&beforeId={lastOfFirstPage.Id}", JsonOptions);
+        Assert.Equal(
+            [start.AddMinutes(9), start.AddMinutes(8), start.AddMinutes(7)],
+            older!.Select(x => x.CreatedAt));
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await Client.GetAsync("/api/orders?limit=101")).StatusCode);
+
+        // Half a cursor is rejected rather than silently falling back to the lossy single-column
+        // comparison that used to drop orders sharing a timestamp with the boundary.
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await Client.GetAsync($"/api/orders?limit=3&before={cutoff}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task OrderHistorySeeksThroughOrdersSharingTheSameTimestamp()
+    {
+        // The reviewer's concrete failure case: two orders at the exact same CreatedAt and limit=1.
+        // A cursor keyed on CreatedAt alone would skip the second one at the boundary - it must not.
+        var register = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest("history-tie@example.test", "Strong!Password123", null),
+            JsonOptions);
+        register.EnsureSuccessStatusCode();
+        var auth = await register.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.AccessToken);
+
+        var tie = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero);
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            dbContext.Orders.Add(HistoryOrder(auth.User.Id, tie));
+            dbContext.Orders.Add(HistoryOrder(auth.User.Id, tie));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var first = await Client.GetFromJsonAsync<OrderDto[]>("/api/orders?limit=1", JsonOptions);
+        Assert.Single(first!);
+        Assert.Equal(tie, first![0].CreatedAt);
+
+        var cursorBefore = Uri.EscapeDataString(first[0].CreatedAt.ToString("O"));
+        var second = await Client.GetFromJsonAsync<OrderDto[]>(
+            $"/api/orders?limit=1&before={cursorBefore}&beforeId={first[0].Id}", JsonOptions);
+
+        Assert.Single(second!);
+        Assert.Equal(tie, second![0].CreatedAt);
+        Assert.NotEqual(first[0].Id, second[0].Id);
+    }
+
+    [Fact]
+    public async Task PublicCatalogueRequestsAreRateLimited()
+    {
+        // The catalogue is the only unauthenticated endpoint whose per-request cost the caller sizes,
+        // and it had no policy at all. TestServer reports no remote address, so every request here
+        // lands in the same partition - which is exactly what needs exhausting.
+        HttpStatusCode? limited = null;
+        for (var attempt = 0; attempt < 130 && limited is null; attempt++)
+        {
+            using var response = await Client.GetAsync("/api/products?limit=1");
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                limited = response.StatusCode;
+            }
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited);
+    }
+
+    [Fact]
+    public async Task OverlongCatalogueSearchIsRejectedRatherThanScannedPerWord()
+    {
+        var response = await Client.GetAsync($"/api/products?search={new string('a', 121)}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task IdentityRolesAreSeededEvenWhenAutomaticMigrationIsDisabled()
+    {
+        // The documented "apply migrations yourself" route: schema created out of band, API started
+        // with Database:AutoMigrate=false. That flag used to gate the whole initializer, so the
+        // Customer role was never created and the first registration threw during role assignment -
+        // after having already committed the user row, leaving an account that blocked the retry.
+        //
+        // Needs its own container: the class's shared one is migrated and seeded by the factory the
+        // other tests build, which would mask exactly what this asserts.
+        await using var manualPostgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
+        await manualPostgres.StartAsync();
+        var connectionString = manualPostgres.GetConnectionString();
+
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connectionString).Options;
+        await using (var dbContext = new AppDbContext(options))
+        {
+            await dbContext.Database.MigrateAsync();
+        }
+
+        await using var manualFactory = new ApiFactory(connectionString, autoMigrate: false);
+        using var manualClient = manualFactory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            HandleCookies = true,
+        });
+
+        var register = await manualClient.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest("manual@example.test", "Strong!Password123", null),
+            JsonOptions);
+
+        register.EnsureSuccessStatusCode();
+        var auth = await register.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Assert.Contains("Customer", auth!.User.Roles);
+    }
+
+    private static Order HistoryOrder(Guid userId, DateTimeOffset createdAt) => new()
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        CreatedAt = createdAt,
+        Currency = "GBP",
+        Status = "confirmed",
+        DeliveryName = "Test Customer",
+        DeliveryEmail = "customer@example.test",
+        DeliveryAddressLine1 = "1 Test Street",
+        DeliveryCity = "London",
+        DeliveryPostcode = "SW1A 1AA",
+        DeliveryCountry = "United Kingdom",
+        DeliveryMethod = "standard",
+        PaymentTokenId = "tok_test_only",
+        PaymentBrand = "Visa",
+        PaymentLast4 = "4242",
+        Subtotal = 10m,
+        DeliveryCharge = 4.99m,
+        Total = 14.99m,
+    };
 
     private HttpClient Client => client ?? throw new InvalidOperationException("Test client has not been initialized.");
     private ApiFactory Factory => factory ?? throw new InvalidOperationException("Test factory has not been initialized.");

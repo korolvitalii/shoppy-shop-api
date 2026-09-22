@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using ShoppyShop.Domain;
 
@@ -12,7 +13,15 @@ namespace ShoppyShop.Infrastructure;
 
 public static class DatabaseInitializer
 {
+    private const long StartupLockKey = 2026071801;
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
+    private static readonly Action<ILogger, long, Exception> LogStartupLockUnlockFailed =
+        LoggerMessage.Define<long>(
+            LogLevel.Warning,
+            new EventId(1, nameof(LogStartupLockUnlockFailed)),
+            "Failed to explicitly release the startup advisory lock ({LockKey}); the connection close below still releases it at the session level.");
 
     public static async Task InitializeDatabaseAsync(
         this IServiceProvider serviceProvider,
@@ -21,17 +30,56 @@ public static class DatabaseInitializer
     {
         await using var scope = serviceProvider.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await dbContext.Database.MigrateAsync(cancellationToken);
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("ShoppyShop.Infrastructure.DatabaseInitializer");
+
         await dbContext.Database.OpenConnectionAsync(cancellationToken);
         try
         {
-            await dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock(2026071801)", cancellationToken);
+            // Taken before the migration, not after it. Rolling deployments and any scale-out past
+            // one instance start containers concurrently, and two of them issuing the same CREATE
+            // INDEX / ALTER TABLE race on __EFMigrationsHistory and on the DDL itself. Postgres DDL
+            // is transactional, so that usually surfaces as one instance crash-looping rather than
+            // as corruption - but a failed start mid-deploy is still an outage, and a
+            // nondeterministic one. The lock is session-scoped and this connection is held open, so
+            // it covers the migration as well as the seed.
+            await dbContext.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_lock({StartupLockKey})", cancellationToken);
+
+            if (configuration.GetValue("Database:AutoMigrate", true))
+            {
+                await dbContext.Database.MigrateAsync(cancellationToken);
+            }
+
             await SeedCatalogueAsync(dbContext, cancellationToken);
             await SeedIdentityAsync(scope.ServiceProvider, configuration);
         }
         finally
         {
-            await dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock(2026071801)", cancellationToken);
+            // Explicit unlock, not just a close: Npgsql pools the physical connection by default,
+            // and its pool reset (which is what would otherwise clear session state such as an
+            // advisory lock) is deferred to that connection's *next* checkout rather than running
+            // when we close it here. Until something reuses it from the pool, the pooled physical
+            // session still holds pg_advisory_lock, which blocks another instance's startup on the
+            // same lock key for no reason - a second rolling-deploy instance can time out waiting
+            // on a lock the first instance believes it already released.
+            // https://www.npgsql.org/doc/basic-usage.html (connection pooling / RESET on return)
+            try
+            {
+                // CancellationToken.None: if we got here because the token above was cancelled,
+                // still attempt the unlock rather than skipping straight to CloseConnectionAsync.
+                await dbContext.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_unlock({StartupLockKey})", CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                // Never let a failed unlock replace whatever exception the try block above is
+                // already propagating (or turn a clean run into a failure). If the connection is
+                // broken - e.g. the seed above failed because the connection died - this throws
+                // too, so it's caught and logged rather than let out. CloseConnectionAsync below
+                // is the backstop either way: ending the session releases every session-level
+                // lock it still holds, including this one if the explicit unlock couldn't run.
+                LogStartupLockUnlockFailed(logger, StartupLockKey, ex);
+            }
+
             await dbContext.Database.CloseConnectionAsync();
         }
     }
@@ -72,6 +120,8 @@ public static class DatabaseInitializer
             Price = product.Price,
             SalePrice = product.SalePrice,
             InStock = product.InStock,
+            IsNew = product.IsNew,
+            GiftWrappable = product.GiftWrappable,
         }).ToArray();
 
         dbContext.ProductGroups.AddRange(groups);
@@ -143,5 +193,7 @@ public static class DatabaseInitializer
         string ImageUrl,
         decimal Price,
         decimal? SalePrice,
-        bool InStock);
+        bool InStock,
+        bool IsNew = false,
+        bool GiftWrappable = false);
 }

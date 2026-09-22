@@ -12,18 +12,109 @@ namespace ShoppyShop.Infrastructure;
 
 public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvider) : IOrdersService
 {
-    private const int MaxOrderLines = CommerceLimits.MaxOrderLines;
-    private const int MaxQuantityPerProduct = CommerceLimits.MaxQuantityPerProduct;
-    private const decimal MaxOrderTotal = CommerceLimits.MaxOrderTotal;
+    private const int DefaultHistoryPageSize = 50;
+    private const int MaxHistoryPageSize = 100;
 
-    public async Task<IReadOnlyCollection<OrderDto>> GetAsync(Guid userId, CancellationToken cancellationToken) =>
-        (await dbContext.Orders.AsNoTracking()
-            .Include(x => x.Lines)
+    /// <summary>
+    /// The newest <paramref name="limit"/> orders, starting from the one before the order identified
+    /// by <paramref name="before"/> and <paramref name="beforeId"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This collection grows for the life of an account and used to be returned whole, every line
+    /// included, with no <c>Take</c> and no cap - so the one list here that grows per user was the
+    /// one with no ceiling, while the catalogue got a keyset pager. The window seeks on the existing
+    /// <c>(UserId, CreatedAt)</c> index from <c>Persistence.OnModelCreating</c>.
+    /// </para>
+    /// <para>
+    /// The response stays a bare array rather than becoming a <c>{ items, nextCursor }</c> envelope:
+    /// the Angular client reads it as <c>Order[]</c>, so bounding the page below anything it reaches
+    /// keeps that contract intact. The cursor is a pair rather than the single <c>before</c> alone,
+    /// though: <c>CreatedAt</c> is not unique, so a strict <c>&lt;</c> on it drops orders that share a
+    /// boundary timestamp with the last item of the previous page. <paramref name="beforeId"/> is that
+    /// last item's <c>OrderNumber</c> (as the same <c>"ORD-00000"</c> id the client already has on
+    /// every returned order), and <see cref="SeekBefore"/> compares the pair as a row value so ties are
+    /// broken deterministically instead of silently dropped.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyCollection<OrderDto>> GetAsync(
+        Guid userId,
+        DateTimeOffset? before,
+        string? beforeId,
+        int? limit,
+        CancellationToken cancellationToken)
+    {
+        var pageSize = ResolveHistoryPageSize(limit);
+        var cursor = ResolveHistoryCursor(before, beforeId);
+
+        var query = SeekBefore(cursor)
             .Where(x => x.UserId == userId)
+            .Include(x => x.Lines)
             .OrderByDescending(x => x.CreatedAt)
-            .ToArrayAsync(cancellationToken))
-        .Select(MapOrder)
-        .ToArray();
+            .ThenByDescending(x => x.OrderNumber)
+            .Take(pageSize);
+
+        return (await query.ToArrayAsync(cancellationToken))
+            .Select(MapOrder)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Starts the query at the row after <paramref name="cursor"/>, as a row-value comparison.
+    /// </summary>
+    /// <remarks>
+    /// Same technique as <c>CatalogueService.SeekAfter</c>, for the same reason: the equivalent LINQ
+    /// form, <c>CreatedAt &lt; cutoff || (CreatedAt == cutoff &amp;&amp; OrderNumber &lt; orderNumber)</c>,
+    /// is logically identical but is not a single range condition, so Postgres cannot seek it against
+    /// the <c>(UserId, CreatedAt)</c> index the way it can <c>("CreatedAt", "OrderNumber") &lt;
+    /// (@cutoff, @orderNumber)</c>. <c>OrderNumber</c> descending is the tiebreak because the
+    /// <c>ORDER BY</c> below matches it exactly - <c>ThenByDescending(x =&gt; x.OrderNumber)</c> - and
+    /// the two must agree or a boundary shared between orders drops or repeats one of them.
+    /// </remarks>
+    private IQueryable<Order> SeekBefore(HistoryCursor? cursor)
+    {
+        if (cursor is null)
+        {
+            return dbContext.Orders.AsNoTracking();
+        }
+
+        return dbContext.Orders
+            .FromSql($"""SELECT * FROM "Orders" WHERE ("CreatedAt", "OrderNumber") < ({cursor.Value.CreatedAt}, {cursor.Value.OrderNumber})""")
+            .AsNoTracking();
+    }
+
+    private static HistoryCursor? ResolveHistoryCursor(DateTimeOffset? before, string? beforeId)
+    {
+        if (before is null && beforeId is null)
+        {
+            return null;
+        }
+
+        // Require the pair rather than accepting `before` alone: a lone timestamp cannot
+        // disambiguate a tie (see SeekBefore), so accepting it would silently reintroduce the bug
+        // this cursor exists to fix instead of rejecting the malformed request outright.
+        if (before is null || beforeId is null || !TryParseOrderNumber(beforeId, out var orderNumber))
+        {
+            throw new AppValidationException(
+                "before and beforeId must be supplied together, using the id of the last order from the previous page.");
+        }
+
+        return new HistoryCursor(before.Value, orderNumber);
+    }
+
+    private readonly record struct HistoryCursor(DateTimeOffset CreatedAt, long OrderNumber);
+
+    private static int ResolveHistoryPageSize(int? limit)
+    {
+        if (limit is null)
+        {
+            return DefaultHistoryPageSize;
+        }
+
+        return limit is >= 1 and <= MaxHistoryPageSize
+            ? limit.Value
+            : throw new AppValidationException($"Page size must be between 1 and {MaxHistoryPageSize}.");
+    }
 
     public async Task<OrderDto?> GetAsync(Guid userId, string orderId, CancellationToken cancellationToken)
     {
@@ -44,7 +135,7 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
         CreateOrderRequest request,
         CancellationToken cancellationToken)
     {
-        var quantities = Validate(request, idempotencyKey);
+        var quantities = CreateOrderValidator.Validate(request, idempotencyKey);
         var requestHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request)));
 
         // Serializable isolation does not block: Postgres aborts one side of a concurrent
@@ -120,7 +211,6 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
 
         foreach (var product in products)
         {
-            var price = product.SalePrice ?? product.Price;
             order.Lines.Add(new OrderLine
             {
                 Id = Guid.NewGuid(),
@@ -128,22 +218,13 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
                 GroupId = product.GroupId,
                 ProductName = product.Name,
                 ImageUrl = product.ImageUrl,
-                UnitPrice = price,
+                UnitPrice = OrderPricing.UnitPrice(product.Price, product.SalePrice),
                 Quantity = quantities[product.Id],
             });
         }
 
-        order.Subtotal = order.Lines.Sum(x => x.UnitPrice * x.Quantity);
-        order.DeliveryCharge = CommerceLimits.DeliveryCharge;
-        order.Total = order.Subtotal + order.DeliveryCharge;
-
-        // A business ceiling, not a storage one: numeric(12,2) holds far more than this, so an
-        // order overrunning the column is not the failure being prevented. What this catches is a
-        // basket whose combined value is implausible for this shop.
-        if (order.Total > MaxOrderTotal)
-        {
-            throw new AppUnprocessableException($"Order total exceeds the maximum of {MaxOrderTotal:0.00}.");
-        }
+        (order.Subtotal, order.DeliveryCharge, order.Total) =
+            OrderPricing.Price(order.Lines.Select(x => (x.UnitPrice, x.Quantity)));
 
         dbContext.Orders.Add(order);
         dbContext.OrderRequests.Add(new OrderRequest
@@ -191,102 +272,6 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
         }
 
         return MapOrder(previous.Order!);
-    }
-
-    /// <summary>
-    /// Validates the request and returns the per-product quantities the order will be built from.
-    /// Grouping happens here, before the transaction, because the quantity bound is only meaningful
-    /// once duplicate lines for one product have been summed.
-    /// </summary>
-    private static Dictionary<string, int> Validate(CreateOrderRequest request, string idempotencyKey)
-    {
-        if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 200)
-        {
-            throw new AppValidationException("A valid Idempotency-Key header is required.");
-        }
-
-        // These members are declared non-nullable, but the JSON binder still yields null for an
-        // absent or explicitly null member. Without these checks a malformed body dereferences null
-        // and returns 500 instead of a validation error.
-        if (request.Lines is null || request.Delivery is null || request.PaymentToken is null)
-        {
-            throw new AppValidationException("An order requires lines, a delivery address, and a payment token.");
-        }
-
-        if (request.Lines.Count == 0 || request.Lines.Count > MaxOrderLines)
-        {
-            throw new AppValidationException($"An order requires between 1 and {MaxOrderLines} lines.");
-        }
-
-        if (request.Lines.Any(x =>
-            x is null || string.IsNullOrWhiteSpace(x.ProductId) || x.ProductId.Length > 100 ||
-            x.Quantity is < 1 or > MaxQuantityPerProduct))
-        {
-            throw new AppValidationException(
-                $"An order requires products with quantities between 1 and {MaxQuantityPerProduct}.");
-        }
-
-        var quantities = request.Lines
-            .GroupBy(x => x.ProductId, StringComparer.Ordinal)
-            .ToDictionary(x => x.Key, x => x.Sum(item => item.Quantity), StringComparer.Ordinal);
-
-        // Two lines of 99 for the same product each satisfy the per-line bound and then become a
-        // single line of 198. The bound belongs after the grouping, not before it.
-        if (quantities.Values.Any(quantity => quantity > MaxQuantityPerProduct))
-        {
-            throw new AppValidationException(
-                $"An order allows at most {MaxQuantityPerProduct} of any one product.");
-        }
-
-        ValidateDelivery(request.Delivery);
-
-        if (!string.Equals(request.DeliveryMethod, "standard", StringComparison.Ordinal) ||
-            string.IsNullOrWhiteSpace(request.PaymentToken.TokenId) || request.PaymentToken.TokenId.Length > 200 ||
-            string.IsNullOrWhiteSpace(request.PaymentToken.Brand) || request.PaymentToken.Brand.Length > 40 ||
-            request.PaymentToken.Last4?.Length != 4 ||
-            !request.PaymentToken.Last4.All(char.IsDigit))
-        {
-            throw new AppValidationException("A valid payment token, brand, and last four digits are required.");
-        }
-
-        return quantities;
-    }
-
-    /// <summary>
-    /// Lengths mirror the column widths configured in <c>Persistence.OnModelCreating</c>; a value
-    /// that passes a presence check but exceeds its column becomes a database error at SaveChanges
-    /// rather than a 400.
-    /// </summary>
-    private static void ValidateDelivery(DeliveryAddress delivery)
-    {
-        RequiredField(delivery.Name, 200, "Delivery name");
-        RequiredField(delivery.Email, 320, "Delivery email");
-        RequiredField(delivery.Address, 300, "Delivery address");
-        RequiredField(delivery.City, 120, "Delivery city");
-        RequiredField(delivery.Postcode, 30, "Delivery postcode");
-        RequiredField(delivery.Country, 100, "Delivery country");
-
-        var email = delivery.Email.Trim();
-        var at = email.IndexOf('@', StringComparison.Ordinal);
-        if (at <= 0 || at == email.Length - 1 ||
-            email.IndexOf('@', at + 1) >= 0 ||
-            email.Any(char.IsWhiteSpace))
-        {
-            throw new AppValidationException("A valid delivery email address is required.");
-        }
-    }
-
-    private static void RequiredField(string? value, int maxLength, string field)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new AppValidationException($"{field} is required.");
-        }
-
-        if (value.Trim().Length > maxLength)
-        {
-            throw new AppValidationException($"{field} must be at most {maxLength} characters.");
-        }
     }
 
     private static OrderDto MapOrder(Order order) => new(

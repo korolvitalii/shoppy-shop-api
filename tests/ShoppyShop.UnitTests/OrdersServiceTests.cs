@@ -189,6 +189,46 @@ public sealed class OrdersServiceTests
             service.CreateAsync(Guid.NewGuid(), "key", request, CancellationToken.None));
     }
 
+    /// <remarks>
+    /// Only the page-size bound is asserted here, because it is decided before any SQL is built. The
+    /// window itself orders by <c>CreatedAt</c>, and SQLite cannot ORDER BY a <c>DateTimeOffset</c>
+    /// at all - so the paging behaviour is covered against real PostgreSQL in
+    /// <c>ApiFlowTests.OrderHistoryIsCappedAndSeeksPastTheBeforeCutoff</c> instead.
+    /// </remarks>
+    [Fact]
+    public async Task GetAsyncRejectsAHistoryPageSizeOutsideTheAllowedRange()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var service = new OrdersService(fixture.DbContext, TimeProvider.System);
+        var userId = Guid.NewGuid();
+
+        await Assert.ThrowsAsync<AppValidationException>(() =>
+            service.GetAsync(userId, null, null, 0, CancellationToken.None));
+        await Assert.ThrowsAsync<AppValidationException>(() =>
+            service.GetAsync(userId, null, null, 101, CancellationToken.None));
+    }
+
+    /// <remarks>
+    /// Also decided before any SQL is built, unlike the seek itself (see the remark above), so this
+    /// stays a unit test. <c>before</c> alone cannot disambiguate two orders sharing a timestamp -
+    /// that is the bug <c>beforeId</c> exists to close - so half a cursor is rejected outright rather
+    /// than silently falling back to the lossy single-column comparison.
+    /// </remarks>
+    [Fact]
+    public async Task GetAsyncRejectsAHistoryCursorMissingEitherHalf()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var service = new OrdersService(fixture.DbContext, TimeProvider.System);
+        var userId = Guid.NewGuid();
+
+        await Assert.ThrowsAsync<AppValidationException>(() =>
+            service.GetAsync(userId, DateTimeOffset.UtcNow, null, null, CancellationToken.None));
+        await Assert.ThrowsAsync<AppValidationException>(() =>
+            service.GetAsync(userId, null, "ORD-00001", null, CancellationToken.None));
+        await Assert.ThrowsAsync<AppValidationException>(() =>
+            service.GetAsync(userId, DateTimeOffset.UtcNow, "not-an-order-id", null, CancellationToken.None));
+    }
+
     private static CreateOrderRequest CreateRequest(string productId, string groupId, decimal clientUnitPrice, int quantity) => new(
         [new OrderItemRequest(productId, groupId, "Client-supplied name", "/client.jpg", clientUnitPrice, quantity)],
         new DeliveryAddress("Test Customer", "customer@example.test", "1 Test Street", "London", "SW1A 1AA", "United Kingdom"),

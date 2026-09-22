@@ -26,6 +26,7 @@ public sealed class InfrastructureTests
             FrontendOrigin = "https://example.test",
             AdminEmail = "admin@example.test",
             ImageTag = "test-sha",
+            TrustedProxyNetworks = ["10.1.0.0/16", "10.2.0.0/16"],
             Repository = foundation.Repository,
             Env = environment,
         });
@@ -58,6 +59,20 @@ public sealed class InfrastructureTests
                 {
                     ["ImageConfiguration"] = new Dictionary<string, object>
                     {
+                        // Without these the API refuses to start in Production (see Program.cs).
+                        ["RuntimeEnvironmentVariables"] = Match.ArrayWith(new[]
+                        {
+                            Match.ObjectLike(new Dictionary<string, object>
+                            {
+                                ["Name"] = "Proxy__TrustedNetworks__0",
+                                ["Value"] = "10.1.0.0/16",
+                            }),
+                            Match.ObjectLike(new Dictionary<string, object>
+                            {
+                                ["Name"] = "Proxy__TrustedNetworks__1",
+                                ["Value"] = "10.2.0.0/16",
+                            }),
+                        }),
                         ["RuntimeEnvironmentSecrets"] = Match.ArrayWith(new[]
                         {
                             Match.ObjectLike(new Dictionary<string, object>
@@ -70,6 +85,24 @@ public sealed class InfrastructureTests
             },
         });
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" , ")]
+    [InlineData("10.0.0.0/8,not-a-cidr")]
+    public void TrustedProxyNetworksContextIsRequiredAndMustBeValidCidrs(string? value)
+    {
+        // A deployable stack whose API then refuses to boot is worse than a synth that fails.
+        Assert.Throws<InvalidOperationException>(() => ShoppyShop.Cdk.Program.ParseTrustedProxyNetworks(value));
+    }
+
+    [Fact]
+    public void TrustedProxyNetworksContextAcceptsACommaSeparatedList()
+    {
+        Assert.Equal(["10.1.0.0/16", "10.2.0.0/16"], ShoppyShop.Cdk.Program.ParseTrustedProxyNetworks(" 10.1.0.0/16 , 10.2.0.0/16 "));
+    }
+
     [Fact]
     public void FoundationTrustsOnlyTheImmutableMainBranchSubject()
     {

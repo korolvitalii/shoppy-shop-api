@@ -59,7 +59,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-beauty-0/800/600",
       "price": 152.46,
       "salePrice": 121.97,
-      "inStock": true
+      "inStock": true,
+      "isNew": true,
+      "giftWrappable": true
     },
     {
       "id": "beauty-2",
@@ -70,7 +72,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-beauty-1/800/600",
       "price": 174.96,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "beauty-3",
@@ -81,7 +85,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-beauty-2/800/600",
       "price": 33.65,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "beauty-4",
@@ -92,7 +98,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-beauty-3/800/600",
       "price": 316.48,
       "salePrice": 253.18,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": true
     },
     {
       "id": "beauty-5",
@@ -103,7 +111,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-beauty-4/800/600",
       "price": 248.96,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "beauty-6",
@@ -114,7 +124,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-beauty-5/800/600",
       "price": 303.85,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "beauty-7",
@@ -125,7 +137,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-beauty-6/800/600",
       "price": 42.66,
       "salePrice": 34.13,
-      "inStock": true
+      "inStock": true,
+      "isNew": true,
+      "giftWrappable": true
     },
     {
       "id": "beauty-8",
@@ -136,7 +150,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-beauty-7/800/600",
       "price": 366.4,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "beauty-9",
@@ -147,7 +163,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-beauty-8/800/600",
       "price": 24.22,
       "salePrice": null,
-      "inStock": false
+      "inStock": false,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "electronics-1",
@@ -158,7 +176,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-electronics-0/800/600",
       "price": 246.09,
       "salePrice": 196.87,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": true
     },
     {
       "id": "electronics-2",
@@ -169,7 +189,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-electronics-1/800/600",
       "price": 91.06,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "electronics-3",
@@ -180,7 +202,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-electronics-2/800/600",
       "price": 368.9,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "electronics-4",
@@ -191,7 +215,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-electronics-3/800/600",
       "price": 367.76,
       "salePrice": 294.21,
-      "inStock": true
+      "inStock": true,
+      "isNew": true,
+      "giftWrappable": true
     },
     {
       "id": "electronics-5",
@@ -202,7 +228,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-electronics-4/800/600",
       "price": 171.44,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "electronics-6",
@@ -213,7 +241,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-electronics-5/800/600",
       "price": 145.47,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "electronics-7",
@@ -224,7 +254,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-electronics-6/800/600",
       "price": 150.3,
       "salePrice": 120.24,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": true
     },
     {
       "id": "electronics-8",
@@ -235,7 +267,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-electronics-7/800/600",
       "price": 399.36,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "electronics-9",
@@ -246,7 +280,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-electronics-8/800/600",
       "price": 368.65,
       "salePrice": null,
-      "inStock": false
+      "inStock": false,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "fashion-1",
@@ -257,7 +293,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-fashion-0/800/600",
       "price": 206.41,
       "salePrice": 165.13,
-      "inStock": true
+      "inStock": true,
+      "isNew": true,
+      "giftWrappable": true
     },
     {
       "id": "fashion-2",
@@ -268,7 +306,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-fashion-1/800/600",
       "price": 96.37,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "fashion-3",
@@ -279,7 +319,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-fashion-2/800/600",
       "price": 93.64,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "fashion-4",
@@ -290,7 +332,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-fashion-3/800/600",
       "price": 383.73,
       "salePrice": 306.98,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": true
     },
     {
       "id": "fashion-5",
@@ -301,7 +345,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-fashion-4/800/600",
       "price": 266.47,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "fashion-6",
@@ -312,7 +358,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-fashion-5/800/600",
       "price": 391.55,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "fashion-7",
@@ -323,7 +371,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-fashion-6/800/600",
       "price": 286.95,
       "salePrice": 229.56,
-      "inStock": true
+      "inStock": true,
+      "isNew": true,
+      "giftWrappable": true
     },
     {
       "id": "fashion-8",
@@ -334,7 +384,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-fashion-7/800/600",
       "price": 216.97,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "fashion-9",
@@ -345,7 +397,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-fashion-8/800/600",
       "price": 334.04,
       "salePrice": null,
-      "inStock": false
+      "inStock": false,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "home-1",
@@ -356,7 +410,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-home-0/800/600",
       "price": 402.84,
       "salePrice": 322.27,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": true
     },
     {
       "id": "home-2",
@@ -367,7 +423,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-home-1/800/600",
       "price": 373.12,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "home-3",
@@ -378,7 +436,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-home-2/800/600",
       "price": 245.3,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "home-4",
@@ -389,7 +449,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-home-3/800/600",
       "price": 208.22,
       "salePrice": 166.58,
-      "inStock": true
+      "inStock": true,
+      "isNew": true,
+      "giftWrappable": true
     },
     {
       "id": "home-5",
@@ -400,7 +462,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-home-4/800/600",
       "price": 362.68,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "home-6",
@@ -411,7 +475,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-home-5/800/600",
       "price": 237.87,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "home-7",
@@ -422,7 +488,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-home-6/800/600",
       "price": 318.77,
       "salePrice": 255.02,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": true
     },
     {
       "id": "home-8",
@@ -433,7 +501,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-home-7/800/600",
       "price": 25.56,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "home-9",
@@ -444,7 +514,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-home-8/800/600",
       "price": 143.48,
       "salePrice": null,
-      "inStock": false
+      "inStock": false,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "accessories-1",
@@ -455,7 +527,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-accessories-0/800/600",
       "price": 95.43,
       "salePrice": 76.34,
-      "inStock": true
+      "inStock": true,
+      "isNew": true,
+      "giftWrappable": true
     },
     {
       "id": "accessories-2",
@@ -466,7 +540,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-accessories-1/800/600",
       "price": 414.92,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "accessories-3",
@@ -477,7 +553,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-accessories-2/800/600",
       "price": 214.65,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "accessories-4",
@@ -488,7 +566,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-accessories-3/800/600",
       "price": 222.32,
       "salePrice": 177.86,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": true
     },
     {
       "id": "accessories-5",
@@ -499,7 +579,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-accessories-4/800/600",
       "price": 283.21,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "accessories-6",
@@ -510,7 +592,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-accessories-5/800/600",
       "price": 204.56,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "accessories-7",
@@ -521,7 +605,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-accessories-6/800/600",
       "price": 248.78,
       "salePrice": 199.02,
-      "inStock": true
+      "inStock": true,
+      "isNew": true,
+      "giftWrappable": true
     },
     {
       "id": "accessories-8",
@@ -532,7 +618,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-accessories-7/800/600",
       "price": 182.02,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "accessories-9",
@@ -543,7 +631,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-accessories-8/800/600",
       "price": 258.06,
       "salePrice": null,
-      "inStock": false
+      "inStock": false,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "gifts-1",
@@ -554,7 +644,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-gifts-0/800/600",
       "price": 41.01,
       "salePrice": 32.81,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": true
     },
     {
       "id": "gifts-2",
@@ -565,7 +657,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-gifts-1/800/600",
       "price": 180.18,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "gifts-3",
@@ -576,7 +670,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-gifts-2/800/600",
       "price": 308.54,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "gifts-4",
@@ -587,7 +683,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-gifts-3/800/600",
       "price": 119.02,
       "salePrice": 95.22,
-      "inStock": true
+      "inStock": true,
+      "isNew": true,
+      "giftWrappable": true
     },
     {
       "id": "gifts-5",
@@ -598,7 +696,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-gifts-4/800/600",
       "price": 49.87,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "gifts-6",
@@ -609,7 +709,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-gifts-5/800/600",
       "price": 416.24,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "gifts-7",
@@ -620,7 +722,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-gifts-6/800/600",
       "price": 371.67,
       "salePrice": 297.34,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": true
     },
     {
       "id": "gifts-8",
@@ -631,7 +735,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-gifts-7/800/600",
       "price": 230.62,
       "salePrice": null,
-      "inStock": true
+      "inStock": true,
+      "isNew": false,
+      "giftWrappable": false
     },
     {
       "id": "gifts-9",
@@ -642,7 +748,9 @@
       "imageUrl": "https://picsum.photos/seed/shoppyshop-gifts-8/800/600",
       "price": 255.56,
       "salePrice": null,
-      "inStock": false
+      "inStock": false,
+      "isNew": false,
+      "giftWrappable": false
     }
   ]
 }

@@ -147,6 +147,39 @@ public sealed class AuthServiceTests
             () => CreateService(fixture).RefreshAsync(session.RefreshToken, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task ChangePasswordAsyncRejectsAMissingCurrentPasswordAsValidationNotAServerFault()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        await SeedCustomerRoleAsync(fixture);
+        var registered = await CreateService(fixture).RegisterAsync(
+            new RegisterRequest("guard@example.test", "Strong!Password123", null),
+            CancellationToken.None);
+
+        // Identity hands this straight to the password hasher, which throws ArgumentNullException -
+        // an unhandled one is a 500, so a malformed request would be reported as a server fault.
+        await Assert.ThrowsAsync<AppValidationException>(() => CreateService(fixture).ChangePasswordAsync(
+            registered.User.Id,
+            new ChangePasswordRequest(null!, "New!StrongPassword456"),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RegisterAsyncLeavesNoAccountBehindWhenTheCustomerRoleIsMissing()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+
+        // No SeedCustomerRoleAsync: AddToRoleAsync throws for a role that does not exist. Before the
+        // transaction, the user row had already been committed by then - leaving an account that
+        // could not be used and that also blocked retrying with the same address.
+        await Assert.ThrowsAnyAsync<Exception>(() => CreateService(fixture).RegisterAsync(
+            new RegisterRequest("orphan@example.test", "Strong!Password123", null),
+            CancellationToken.None));
+
+        var (users, _) = TestSupport.CreateIdentity(fixture.CreateScope());
+        Assert.Null(await users.FindByEmailAsync("orphan@example.test"));
+    }
+
     private static async Task SeedCustomerRoleAsync(SqliteAppDbContextFixture fixture)
     {
         var (_, roles) = TestSupport.CreateIdentity(fixture.DbContext);
