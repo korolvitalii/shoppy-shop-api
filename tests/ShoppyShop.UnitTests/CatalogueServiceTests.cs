@@ -300,6 +300,38 @@ public sealed class CatalogueServiceTests
         return ids;
     }
 
+    [Fact]
+    public async Task GetProductsAsyncRejectsAnOverlongSearchRatherThanBuildingAPredicatePerWord()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var service = new CatalogueService(fixture.DbContext);
+
+        var error = await Assert.ThrowsAsync<AppValidationException>(() => service.GetProductsAsync(
+            new ProductQuery(Search: new string('a', 121)),
+            CancellationToken.None));
+
+        Assert.Contains("search", error.Errors.Keys);
+    }
+
+    [Fact]
+    public async Task GetProductsAsyncStopsAddingPredicatesPastTheSearchTermCap()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        var dbContext = fixture.DbContext;
+        dbContext.ProductGroups.Add(new ProductGroup { Id = "beauty", Name = "Beauty", Description = "d", ImageUrl = "/g.jpg" });
+        dbContext.Products.Add(Product("many-words", price: 10m, salePrice: null, name: "alpha beta gamma delta epsilon zeta"));
+        await dbContext.SaveChangesAsync();
+        var service = new CatalogueService(dbContext);
+
+        // Seven terms, of which only the first six are applied. "omega" matches nothing, so an
+        // uncapped implementation would AND it in and return no rows at all.
+        var products = await service.GetProductsAsync(
+            new ProductQuery(Search: "alpha beta gamma delta epsilon zeta omega"),
+            CancellationToken.None);
+
+        Assert.Equal(["many-words"], products.Items.Select(product => product.Id));
+    }
+
     private static Product Product(
         string id,
         decimal price,

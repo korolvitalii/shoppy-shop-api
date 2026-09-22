@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ShoppyShop.Application;
 
 public sealed record ProductGroupDto(
@@ -46,9 +48,22 @@ public sealed record ProductPageDto(
     string? NextCursor,
     int? TotalCount = null);
 
-public sealed record RegisterRequest(string Email, string Password, string? DisplayName);
-public sealed record LoginRequest(string Email, string Password);
-public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+// Annotated so the contract is enforced at the boundary and visible in OpenAPI, rather than being
+// discoverable only by reading each service. A non-nullable `string` here is a declaration, not a
+// runtime guarantee: the JSON binder still yields null for an absent or explicitly null member, and
+// Identity passes some of these straight to the password hasher, which throws on null. The
+// hand-rolled checks inside the services stay as defence in depth - they carry the tested messages,
+// and they are what protects a service called directly rather than through an endpoint.
+public sealed record RegisterRequest(
+    [property: Required, StringLength(320)] string Email,
+    [property: Required] string Password,
+    [property: StringLength(200)] string? DisplayName);
+public sealed record LoginRequest(
+    [property: Required, StringLength(320)] string Email,
+    [property: Required] string Password);
+public sealed record ChangePasswordRequest(
+    [property: Required] string CurrentPassword,
+    [property: Required] string NewPassword);
 public sealed record UserDto(Guid Id, string Email, string? DisplayName, IReadOnlyCollection<string> Roles);
 public sealed record AuthResult(string AccessToken, DateTimeOffset AccessTokenExpiresAt, string RefreshToken, UserDto User);
 

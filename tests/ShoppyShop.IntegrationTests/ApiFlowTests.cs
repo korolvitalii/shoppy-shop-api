@@ -653,6 +653,182 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
             (await Client.DeleteAsync("/api/admin/product-groups/test-group")).StatusCode);
     }
 
+    [Fact]
+    public async Task OrderHistoryIsCappedAndSeeksPastTheBeforeCutoff()
+    {
+        // Covered here rather than as a unit test: the window orders by CreatedAt, and SQLite - which
+        // the unit tests run on - cannot ORDER BY a DateTimeOffset at all.
+        var register = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest("history@example.test", "Strong!Password123", null),
+            JsonOptions);
+        register.EnsureSuccessStatusCode();
+        var auth = await register.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.AccessToken);
+
+        var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            for (var index = 0; index < 60; index++)
+            {
+                dbContext.Orders.Add(HistoryOrder(auth.User.Id, start.AddMinutes(index)));
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        // Unbounded, this returned all 60 with every line attached.
+        var capped = await Client.GetFromJsonAsync<OrderDto[]>("/api/orders", JsonOptions);
+        Assert.Equal(50, capped!.Length);
+        Assert.Equal(start.AddMinutes(59), capped[0].CreatedAt);
+        Assert.Equal(start.AddMinutes(10), capped[^1].CreatedAt);
+
+        var limited = await Client.GetFromJsonAsync<OrderDto[]>("/api/orders?limit=5", JsonOptions);
+        Assert.Equal(5, limited!.Length);
+
+        // The cursor is the last item of the previous page - CreatedAt and id together, not
+        // CreatedAt alone (see OrderHistorySeeksThroughOrdersSharingTheSameTimestamp for why).
+        var lastOfFirstPage = capped[^1];
+        var cutoff = Uri.EscapeDataString(lastOfFirstPage.CreatedAt.ToString("O"));
+        var older = await Client.GetFromJsonAsync<OrderDto[]>(
+            $"/api/orders?limit=3&before={cutoff}&beforeId={lastOfFirstPage.Id}", JsonOptions);
+        Assert.Equal(
+            [start.AddMinutes(9), start.AddMinutes(8), start.AddMinutes(7)],
+            older!.Select(x => x.CreatedAt));
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await Client.GetAsync("/api/orders?limit=101")).StatusCode);
+
+        // Half a cursor is rejected rather than silently falling back to the lossy single-column
+        // comparison that used to drop orders sharing a timestamp with the boundary.
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await Client.GetAsync($"/api/orders?limit=3&before={cutoff}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task OrderHistorySeeksThroughOrdersSharingTheSameTimestamp()
+    {
+        // The reviewer's concrete failure case: two orders at the exact same CreatedAt and limit=1.
+        // A cursor keyed on CreatedAt alone would skip the second one at the boundary - it must not.
+        var register = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest("history-tie@example.test", "Strong!Password123", null),
+            JsonOptions);
+        register.EnsureSuccessStatusCode();
+        var auth = await register.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.AccessToken);
+
+        var tie = new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero);
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            dbContext.Orders.Add(HistoryOrder(auth.User.Id, tie));
+            dbContext.Orders.Add(HistoryOrder(auth.User.Id, tie));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var first = await Client.GetFromJsonAsync<OrderDto[]>("/api/orders?limit=1", JsonOptions);
+        Assert.Single(first!);
+        Assert.Equal(tie, first![0].CreatedAt);
+
+        var cursorBefore = Uri.EscapeDataString(first[0].CreatedAt.ToString("O"));
+        var second = await Client.GetFromJsonAsync<OrderDto[]>(
+            $"/api/orders?limit=1&before={cursorBefore}&beforeId={first[0].Id}", JsonOptions);
+
+        Assert.Single(second!);
+        Assert.Equal(tie, second![0].CreatedAt);
+        Assert.NotEqual(first[0].Id, second[0].Id);
+    }
+
+    [Fact]
+    public async Task PublicCatalogueRequestsAreRateLimited()
+    {
+        // The catalogue is the only unauthenticated endpoint whose per-request cost the caller sizes,
+        // and it had no policy at all. TestServer reports no remote address, so every request here
+        // lands in the same partition - which is exactly what needs exhausting.
+        HttpStatusCode? limited = null;
+        for (var attempt = 0; attempt < 130 && limited is null; attempt++)
+        {
+            using var response = await Client.GetAsync("/api/products?limit=1");
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                limited = response.StatusCode;
+            }
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited);
+    }
+
+    [Fact]
+    public async Task OverlongCatalogueSearchIsRejectedRatherThanScannedPerWord()
+    {
+        var response = await Client.GetAsync($"/api/products?search={new string('a', 121)}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task IdentityRolesAreSeededEvenWhenAutomaticMigrationIsDisabled()
+    {
+        // The documented "apply migrations yourself" route: schema created out of band, API started
+        // with Database:AutoMigrate=false. That flag used to gate the whole initializer, so the
+        // Customer role was never created and the first registration threw during role assignment -
+        // after having already committed the user row, leaving an account that blocked the retry.
+        //
+        // Needs its own container: the class's shared one is migrated and seeded by the factory the
+        // other tests build, which would mask exactly what this asserts.
+        await using var manualPostgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
+        await manualPostgres.StartAsync();
+        var connectionString = manualPostgres.GetConnectionString();
+
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connectionString).Options;
+        await using (var dbContext = new AppDbContext(options))
+        {
+            await dbContext.Database.MigrateAsync();
+        }
+
+        await using var manualFactory = new ApiFactory(connectionString, autoMigrate: false);
+        using var manualClient = manualFactory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            HandleCookies = true,
+        });
+
+        var register = await manualClient.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest("manual@example.test", "Strong!Password123", null),
+            JsonOptions);
+
+        register.EnsureSuccessStatusCode();
+        var auth = await register.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Assert.Contains("Customer", auth!.User.Roles);
+    }
+
+    private static Order HistoryOrder(Guid userId, DateTimeOffset createdAt) => new()
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        CreatedAt = createdAt,
+        Currency = "GBP",
+        Status = "confirmed",
+        DeliveryName = "Test Customer",
+        DeliveryEmail = "customer@example.test",
+        DeliveryAddressLine1 = "1 Test Street",
+        DeliveryCity = "London",
+        DeliveryPostcode = "SW1A 1AA",
+        DeliveryCountry = "United Kingdom",
+        DeliveryMethod = "standard",
+        PaymentTokenId = "tok_test_only",
+        PaymentBrand = "Visa",
+        PaymentLast4 = "4242",
+        Subtotal = 10m,
+        DeliveryCharge = 4.99m,
+        Total = 14.99m,
+    };
+
     private HttpClient Client => client ?? throw new InvalidOperationException("Test client has not been initialized.");
     private ApiFactory Factory => factory ?? throw new InvalidOperationException("Test factory has not been initialized.");
 

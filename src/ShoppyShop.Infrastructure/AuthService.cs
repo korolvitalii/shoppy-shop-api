@@ -13,16 +13,6 @@ using ShoppyShop.Domain;
 
 namespace ShoppyShop.Infrastructure;
 
-public sealed class JwtOptions
-{
-    public const string SectionName = "Jwt";
-    public required string Issuer { get; init; }
-    public required string Audience { get; init; }
-    public required string SigningKey { get; init; }
-    public int AccessTokenMinutes { get; init; } = 15;
-    public int RefreshTokenDays { get; init; } = 7;
-}
-
 public sealed class AuthService(
     UserManager<AppUser> userManager,
     AppDbContext dbContext,
@@ -47,10 +37,27 @@ public sealed class AuthService(
             EmailConfirmed = true,
         };
 
-        var result = await userManager.CreateAsync(user, request.Password);
-        ThrowIfIdentityFailed(result);
-        await userManager.AddToRoleAsync(user, "Customer");
-        return await CreateSessionAsync(user, cancellationToken);
+        // Creating the account and giving it its role are one decision, so they commit together.
+        // Without the transaction a failed role assignment left a committed user row behind: an
+        // account the customer cannot use, which also blocks them retrying with the same address
+        // because the email is now taken.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async ct =>
+        {
+            dbContext.ChangeTracker.Clear();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+
+            ThrowIfIdentityFailed(await userManager.CreateAsync(user, request.Password));
+
+            // Checked, unlike before. AddToRoleAsync throws outright when the role does not exist,
+            // but it *returns* a failed result when the concurrency-stamped update inside it loses -
+            // and discarding that silently registered a user with no role and answered 200.
+            ThrowIfIdentityFailed(await userManager.AddToRoleAsync(user, "Customer"));
+
+            var session = await CreateSessionAsync(user, ct);
+            await transaction.CommitAsync(ct);
+            return session;
+        }, cancellationToken);
     }
 
     public async Task<AuthResult> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
@@ -90,7 +97,31 @@ public sealed class AuthService(
             await userManager.ResetAccessFailedCountAsync(user);
         }
 
-        return await CreateSessionAsync(user, cancellationToken);
+        // The password was checked a few statements ago, against the hash as it stood then. A
+        // password change may have committed in between, and ChangePasswordAsync revokes only the
+        // sessions that exist when its revoke runs - so a session inserted just after it sweeps past
+        // survives, and whoever knew the old password keeps a live seven-day refresh token. Taking
+        // the same per-user lock that change holds, then re-reading, closes that window: Identity
+        // rolls the security stamp on every password change, so a stamp that still matches means the
+        // credential this request verified is still the current one.
+        var verifiedStamp = user.SecurityStamp;
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async ct =>
+        {
+            dbContext.ChangeTracker.Clear();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            await AcquireUserSessionLockAsync(user.Id, ct);
+
+            var current = await userManager.FindByIdAsync(user.Id.ToString());
+            if (current is null || !string.Equals(current.SecurityStamp, verifiedStamp, StringComparison.Ordinal))
+            {
+                throw new AppUnauthorizedException("Invalid email or password.");
+            }
+
+            var session = await CreateSessionAsync(current, ct);
+            await transaction.CommitAsync(ct);
+            return session;
+        }, cancellationToken);
     }
 
     public async Task<AuthResult> RefreshAsync(string refreshToken, CancellationToken cancellationToken)
@@ -197,6 +228,15 @@ public sealed class AuthService(
 
     public async Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken cancellationToken)
     {
+        // Identity passes CurrentPassword straight to the password hasher, which throws
+        // ArgumentNullException on null - and an unhandled ArgumentNullException is a 500, so a
+        // malformed request would be reported as a server fault. NewPassword needs no guard of its
+        // own: Identity's password validator rejects null itself, and that already arrives as a 400.
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+        {
+            throw new AppValidationException("Current password is required.");
+        }
+
         // Both writes belong to one decision: if the revocation fails after the hash is
         // persisted, the password has changed while every existing session stays valid.
         var strategy = dbContext.Database.CreateExecutionStrategy();

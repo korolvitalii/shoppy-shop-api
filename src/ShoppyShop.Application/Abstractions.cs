@@ -28,7 +28,7 @@ public interface IFavoritesService
 
 public interface IOrdersService
 {
-    Task<IReadOnlyCollection<OrderDto>> GetAsync(Guid userId, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<OrderDto>> GetAsync(Guid userId, DateTimeOffset? before, string? beforeId, int? limit, CancellationToken cancellationToken);
     Task<OrderDto?> GetAsync(Guid userId, string orderId, CancellationToken cancellationToken);
     Task<OrderDto> CreateAsync(Guid userId, string idempotencyKey, CreateOrderRequest request, CancellationToken cancellationToken);
 }

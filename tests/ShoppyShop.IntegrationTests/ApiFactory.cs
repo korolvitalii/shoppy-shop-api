@@ -10,7 +10,8 @@ namespace ShoppyShop.IntegrationTests;
 
 public sealed class ApiFactory(
     string connectionString,
-    Func<IServiceProvider, IAssistantModelClient>? assistantModelClientFactory = null) : WebApplicationFactory<Program>
+    Func<IServiceProvider, IAssistantModelClient>? assistantModelClientFactory = null,
+    bool autoMigrate = true) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -22,7 +23,7 @@ public sealed class ApiFactory(
             .UseSetting("Jwt:SigningKey", "integration-test-signing-key-that-is-at-least-thirty-two-bytes")
             .UseSetting("BootstrapAdmin:Email", "admin@example.test")
             .UseSetting("BootstrapAdmin:Password", "Admin!IntegrationPassword123")
-            .UseSetting("Database:AutoMigrate", "true")
+            .UseSetting("Database:AutoMigrate", autoMigrate ? "true" : "false")
             .ConfigureTestServices(services =>
             {
                 // Never call the real Anthropic API from tests — swap in a fake/stub model client.

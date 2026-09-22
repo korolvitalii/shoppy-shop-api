@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
+using ShoppyShop.Application;
 using ShoppyShop.Infrastructure;
 
 namespace ShoppyShop.UnitTests;

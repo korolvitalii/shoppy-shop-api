@@ -3,7 +3,6 @@ using System.IdentityModel.Tokens.Jwt;
 using Microsoft.Extensions.Options;
 
 using ShoppyShop.Application;
-using ShoppyShop.Infrastructure;
 
 namespace ShoppyShop.Api;
 
@@ -13,13 +12,15 @@ public static class ApiEndpoints
 
     public static IEndpointRouteBuilder MapApiEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        MapCatalogue(endpoints.MapGroup("/api").WithTags("Catalogue"));
+        MapCatalogue(endpoints.MapGroup("/api").WithTags("Catalogue").RequireRateLimiting("catalogue"));
         MapFeatureConfig(endpoints.MapGroup("/api").WithTags("Configuration"));
         MapAssistant(endpoints.MapGroup("/api/assistant").WithTags("Assistant").RequireRateLimiting("assistant"));
         MapAuth(endpoints.MapGroup("/api/auth").WithTags("Authentication"));
         MapFavorites(endpoints.MapGroup("/api/favorites").WithTags("Favorites").RequireAuthorization().RequireRateLimiting("favorites"));
         MapOrders(endpoints.MapGroup("/api/orders").WithTags("Orders").RequireAuthorization());
-        MapAdmin(endpoints.MapGroup("/api/admin").WithTags("Administration").RequireAuthorization(policy => policy.RequireRole("Admin")));
+        MapAdmin(endpoints.MapGroup("/api/admin").WithTags("Administration")
+            .RequireAuthorization(policy => policy.RequireRole("Admin"))
+            .RequireRateLimiting("catalogue"));
         return endpoints;
     }
 
@@ -152,7 +153,7 @@ public static class ApiEndpoints
             await service.ChangePasswordAsync(context.User.UserId(), request, cancellationToken);
             context.Response.Cookies.Delete(RefreshCookie, RefreshCookieOptions());
             return Results.NoContent();
-        }).RequireAuthorization();
+        }).RequireAuthorization().RequireRateLimiting("password");
     }
 
     private static void MapFavorites(RouteGroupBuilder favorites)
@@ -186,8 +187,14 @@ public static class ApiEndpoints
 
     private static void MapOrders(RouteGroupBuilder orders)
     {
-        orders.MapGet("/", (IOrdersService service, HttpContext context, CancellationToken cancellationToken) =>
-            service.GetAsync(context.User.UserId(), cancellationToken));
+        orders.MapGet("/", (
+            DateTimeOffset? before,
+            string? beforeId,
+            int? limit,
+            IOrdersService service,
+            HttpContext context,
+            CancellationToken cancellationToken) =>
+            service.GetAsync(context.User.UserId(), before, beforeId, limit, cancellationToken));
         orders.MapGet("/{orderId}", async (
             string orderId,
             IOrdersService service,
