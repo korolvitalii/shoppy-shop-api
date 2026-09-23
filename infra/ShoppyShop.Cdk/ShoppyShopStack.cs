@@ -81,9 +81,9 @@ public sealed class ShoppyShopInfrastructureProps : StackProps
     public required IRepository Repository { get; init; }
 
     /// <summary>
-    /// CIDRs of the App Runner ingress, passed to the API as <c>Proxy__TrustedNetworks__N</c>. The
-    /// API refuses to start in Production without at least one - otherwise every caller shares the
-    /// ingress address and each per-IP rate limit collapses into a single global bucket. App Runner
+    /// CIDRs of the App Runner ingress, passed to the API as <c>Proxy__TrustedNetworks__N</c>. Without
+    /// at least one the API warns at startup in Production, and every caller shares the ingress
+    /// address and each per-IP rate limit collapses into a single global bucket. App Runner
     /// does not publish this range, so it is supplied at deploy time rather than guessed here.
     /// </summary>
     public required IReadOnlyList<string> TrustedProxyNetworks { get; init; }

@@ -59,7 +59,7 @@ public sealed class InfrastructureTests
                 {
                     ["ImageConfiguration"] = new Dictionary<string, object>
                     {
-                        // Without these the API refuses to start in Production (see Program.cs).
+                        // Without these the per-IP rate limits collapse into one bucket (see Program.cs).
                         ["RuntimeEnvironmentVariables"] = Match.ArrayWith(new[]
                         {
                             Match.ObjectLike(new Dictionary<string, object>
@@ -93,7 +93,7 @@ public sealed class InfrastructureTests
     [InlineData("10.0.0.0/8,not-a-cidr")]
     public void TrustedProxyNetworksContextIsRequiredAndMustBeValidCidrs(string? value)
     {
-        // A deployable stack whose API then refuses to boot is worse than a synth that fails.
+        // A deployable stack whose rate limits silently collapse is worse than a synth that fails.
         Assert.Throws<InvalidOperationException>(() => ShoppyShop.Cdk.Program.ParseTrustedProxyNetworks(value));
     }
 

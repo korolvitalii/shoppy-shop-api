@@ -243,7 +243,7 @@ Important settings include:
 
 `Proxy:TrustedNetworks` is empty by default, which leaves the framework's own default (no forwarding trusted at all) in place: a client-supplied `X-Forwarded-For` has no effect, and the "auth" and "assistant" rate-limit policies key on the real connecting peer. This matters because the API sits behind a proxy edge in production, and those policies would otherwise be trivial to bypass by rotating the header.
 
-**The API refuses to start in Production with `Proxy:TrustedNetworks` unset.** Behind a proxy, an empty list means `RemoteIpAddress` is the ingress for every caller on Earth, so every per-IP partition collapses into a single global bucket — "auth" becomes 10 requests per minute for the whole world across register, login and refresh combined, and "assistant" 20 per hour. That is a self-inflicted global throttle rather than a security nicety, so it fails closed at startup instead of degrading quietly. Other environments are unaffected.
+**The API logs a warning at startup in Production when `Proxy:TrustedNetworks` is unset.** Behind a proxy, an empty list means `RemoteIpAddress` is the ingress for every caller on Earth, so every per-IP partition collapses into a single global bucket — "auth" becomes 10 requests per minute for the whole world across register, login and refresh combined, "assistant" 20 per hour, and "catalogue" 120 per minute. It briefly refused to start instead, but that blocked the Railway deploy before the ingress range had been measured, so it warns until the range is set. Other environments are unaffected.
 
 When the list is non-empty the API also honours `X-Forwarded-Proto`, so `UseHttpsRedirection` sees the original scheme rather than the plain HTTP the proxy forwards after terminating TLS.
 
@@ -400,7 +400,7 @@ Anthropic__Model
 Features__AssistantEnabled
 ```
 
-`Proxy__TrustedNetworks__0` (and `__1`, `__2`, ... for additional ranges) must be set to the deployed ingress's actual edge address range, verified against the running service — see "Proxy trust boundary" above. **This is required**: in Production the API now fails to start without it, rather than silently collapsing every per-IP rate limit into one global bucket.
+`Proxy__TrustedNetworks__0` (and `__1`, `__2`, ... for additional ranges) must be set to the deployed ingress's actual edge address range, verified against the running service — see "Proxy trust boundary" above. **It is not set yet**: until it is, the API starts with a warning and every per-IP rate limit shares one global bucket.
 
 > **Hosting note.** This section describes Railway, which is what `.github/workflows/deploy.yml` actually deploys to. `infra/ShoppyShop.Cdk` builds an AWS App Runner + RDS stack instead, and the two have drifted apart — the edge range above belongs to whichever one is live. Settle that before setting `Proxy__TrustedNetworks__0`.
 
