@@ -95,18 +95,6 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         : ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
 });
 
-// Fail closed rather than quietly degrading. With no trusted network the forwarded headers are
-// ignored (above), so RemoteIpAddress is the ingress for every caller and each per-IP partition
-// below collapses into one global bucket: "auth" becomes 10 requests per minute for the whole world
-// across register, login and refresh together, and "assistant" 20 per hour. That is an availability
-// failure bad enough to be worth refusing to start over.
-if (builder.Environment.IsProduction()
-    && builder.Configuration.GetSection("Proxy:TrustedNetworks").Get<string[]>() is not { Length: > 0 })
-{
-    throw new InvalidOperationException(
-        "Proxy:TrustedNetworks must be set in Production. Without it every request appears to " +
-        "originate from the ingress and the per-IP rate limits collapse into a single bucket.");
-}
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -165,6 +153,23 @@ builder.Services.AddRateLimiter(options =>
         }));
 });
 var app = builder.Build();
+
+// With no trusted network the forwarded headers are ignored (above), so behind a proxy
+// RemoteIpAddress is the ingress for every caller and each per-IP partition collapses into one
+// global bucket: "auth" becomes 10 requests per minute for the whole world, "assistant" 20 per hour
+// and "catalogue" 120 per minute. This used to refuse to start, but the ingress range has not been
+// measured yet (see README "Proxy trust boundary"), so it warns loudly instead of blocking deploys.
+if (app.Environment.IsProduction()
+    && app.Configuration.GetSection("Proxy:TrustedNetworks").Get<string[]>() is not { Length: > 0 })
+{
+    var logProxyTrustUnset = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(1, "ProxyTrustUnset"),
+        "Proxy:TrustedNetworks is not set in Production. Every request appears to originate from " +
+        "the ingress, so the per-IP rate limits share a single global bucket.");
+    logProxyTrustUnset(app.Logger, null);
+}
+
 app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();

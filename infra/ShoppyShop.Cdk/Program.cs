@@ -45,9 +45,9 @@ public static class Program
     }
 
     /// <summary>
-    /// Required, and checked here rather than at container start: the API refuses to boot in
-    /// Production without a trusted proxy network, so a missing or malformed value would otherwise
-    /// surface only as a failed App Runner deployment.
+    /// Required, and checked here rather than at container start: without a trusted proxy network
+    /// the API only logs a warning and every per-IP rate limit collapses into one global bucket, and
+    /// a malformed value would surface only as a failed App Runner deployment.
     /// </summary>
     public static IReadOnlyList<string> ParseTrustedProxyNetworks(string? value)
     {
