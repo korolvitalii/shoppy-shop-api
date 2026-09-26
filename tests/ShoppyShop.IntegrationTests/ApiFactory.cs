@@ -13,11 +13,14 @@ public sealed class ApiFactory(
     Func<IServiceProvider, IAssistantModelClient>? assistantModelClientFactory = null,
     bool autoMigrate = true) : WebApplicationFactory<Program>
 {
+    public const string EdgeSecret = "integration-test-edge-secret-of-at-least-32-characters";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder
             .UseEnvironment("Testing")
             .UseSetting("ConnectionStrings:Postgres", connectionString)
+            .UseSetting("Proxy:EdgeSecret", EdgeSecret)
             .UseSetting("Jwt:Issuer", "ShoppyShop.Tests")
             .UseSetting("Jwt:Audience", "ShoppyShop.Tests")
             .UseSetting("Jwt:SigningKey", "integration-test-signing-key-that-is-at-least-thirty-two-bytes")
