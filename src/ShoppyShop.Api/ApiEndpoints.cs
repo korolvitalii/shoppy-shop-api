@@ -8,7 +8,7 @@ namespace ShoppyShop.Api;
 
 public static class ApiEndpoints
 {
-    private const string RefreshCookie = "shoppy.refresh";
+    internal const string RefreshCookie = "shoppy.refresh";
 
     public static IEndpointRouteBuilder MapApiEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -125,7 +125,7 @@ public static class ApiEndpoints
             }
 
             return ToAuthResponse(context, await service.RefreshAsync(refreshToken, cancellationToken));
-        }).RequireRateLimiting("auth");
+        }).RequireRateLimiting("refresh");
 
         auth.MapPost("/logout", async (
             IAuthService service,

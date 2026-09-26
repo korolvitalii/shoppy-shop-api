@@ -236,18 +236,24 @@ Important settings include:
 | `Anthropic:ApiKey`           | Anthropic API credential                  |
 | `Anthropic:Model`            | Anthropic model used by the assistant     |
 | `Features:AssistantEnabled`  | Controls assistant visibility in the UI   |
-| `Proxy:TrustedNetworks`      | CIDR ranges allowed to set `X-Forwarded-For` |
+| `Proxy:EdgeSecret`           | Shared secret proving a request came through the Vercel edge (32+ characters) |
+| `Proxy:TrustedNetworks`      | CIDR ranges allowed to set `X-Forwarded-For` (AWS/App Runner path only) |
 | `Proxy:ForwardLimit`         | Forwarded-header hops to process (default `1`) |
+| `Diagnostics:LogPeerAddress` | Temporarily logs peer/client address resolution per request (default `false`) |
 
 ### Proxy trust boundary
 
-`Proxy:TrustedNetworks` is empty by default, which leaves the framework's own default (no forwarding trusted at all) in place: a client-supplied `X-Forwarded-For` has no effect, and the "auth" and "assistant" rate-limit policies key on the real connecting peer. This matters because the API sits behind a proxy edge in production, and those policies would otherwise be trivial to bypass by rotating the header.
+In production, browsers reach the API through the frontend's Vercel `/api` rewrite and then Railway's edge. The connecting peer is therefore Railway's proxy for every caller, and without more information every per-IP rate-limit partition ("auth", "refresh", "assistant", "catalogue") would collapse into one global bucket.
 
-**The API logs a warning at startup in Production when `Proxy:TrustedNetworks` is unset.** Behind a proxy, an empty list means `RemoteIpAddress` is the ingress for every caller on Earth, so every per-IP partition collapses into a single global bucket — "auth" becomes 10 requests per minute for the whole world across register, login and refresh combined, "assistant" 20 per hour, and "catalogue" 120 per minute. It briefly refused to start instead, but that blocked the Railway deploy before the ingress range had been measured, so it warns until the range is set. Other environments are unaffected.
+**Edge client address.** The frontend's Vercel Routing Middleware overwrites two headers on every `/api` request: `X-Shoppy-Client-Ip` (the visitor's address as Vercel saw it) and `X-Shoppy-Edge-Secret`. The API sets `RemoteIpAddress` from the first only when the second matches `Proxy:EdgeSecret` (constant-time comparison), then removes both headers. A caller who skips Vercel and calls the Railway host directly cannot forge an address without the secret, so they just share the ingress bucket. `Proxy:EdgeSecret` (Railway variable `Proxy__EdgeSecret`) must equal the frontend's `SHOPPY_EDGE_SECRET` Vercel variable. A mismatch or a missing value degrades to the shared bucket; it never stops the API from starting.
 
-When the list is non-empty the API also honours `X-Forwarded-Proto`, so `UseHttpsRedirection` sees the original scheme rather than the plain HTTP the proxy forwards after terminating TLS.
+Range-based trust (`Proxy:TrustedNetworks`) can't solve this deployment on its own. Past Railway's hop, the best it could produce is Vercel's egress address, which is unpublished and shared by many visitors. The setting remains for the AWS App Runner stack in `infra/`. When it is set, the API also honours `X-Forwarded-Proto`, so `UseHttpsRedirection` sees the original scheme.
 
-Before setting `Proxy:TrustedNetworks` in production, verify it against the actual deployed ingress rather than trusting a third party's documentation or community reports of its address range — send a request with a forged `X-Forwarded-For` through the real ingress and confirm it has no effect until the range is set, and no effect from an address outside it once set. Only then trust the configured range.
+**No proxy setting can stop the API from starting.** Invalid `Proxy:TrustedNetworks` or `Proxy:ForwardLimit` values are skipped with a warning. In Production, the API also warns when neither `Proxy:EdgeSecret` nor `Proxy:TrustedNetworks` is set. A startup refusal was tried once and failed the Railway healthcheck.
+
+`/api/auth/refresh` has its own "refresh" policy (30 per minute per client) instead of sharing "auth" (10 per minute, login and register). The storefront calls refresh on every page load, and a refresh request without the `shoppy.refresh` cookie is not limited at all: it is rejected before any database work.
+
+Rate-limit counters are kept in memory per instance, so with N replicas each limit is effectively N times higher.
 
 To use the shopping assistant locally, store the Anthropic credential outside source control:
 
@@ -400,9 +406,9 @@ Anthropic__Model
 Features__AssistantEnabled
 ```
 
-`Proxy__TrustedNetworks__0` (and `__1`, `__2`, ... for additional ranges) must be set to the deployed ingress's actual edge address range, verified against the running service — see "Proxy trust boundary" above. **It is not set yet**: until it is, the API starts with a warning and every per-IP rate limit shares one global bucket.
+`Proxy__EdgeSecret` must be set in Railway to the same value as `SHOPPY_EDGE_SECRET` in the frontend's Vercel project (Preview and Production) — see "Proxy trust boundary" above. Until both are set, the API starts with a warning and every per-IP rate limit shares one global bucket. To verify after a change, set `Diagnostics__LogPeerAddress=true` temporarily and check that requests arriving through Vercel log `edgeValidated=True` with the visitor's address.
 
-> **Hosting note.** This section describes Railway, which is what `.github/workflows/deploy.yml` actually deploys to. `infra/ShoppyShop.Cdk` builds an AWS App Runner + RDS stack instead, and the two have drifted apart — the edge range above belongs to whichever one is live. Settle that before setting `Proxy__TrustedNetworks__0`.
+> **Hosting note.** This section describes Railway, which is what `.github/workflows/deploy.yml` actually deploys to. `infra/ShoppyShop.Cdk` builds an AWS App Runner + RDS stack instead, which uses `Proxy__TrustedNetworks__N` rather than the edge secret.
 
 ## Continuous deployment
 

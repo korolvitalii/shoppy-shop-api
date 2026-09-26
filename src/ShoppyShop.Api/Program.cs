@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -73,24 +74,52 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
         policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
     }
 }));
+// Parsed here, not inside the options callback, so a mistyped value is skipped and reported (after
+// the app is built, below) instead of thrown: a throw while the pipeline is built fails Railway's
+// healthcheck exactly the way the old Production refusal to start did.
+var invalidProxySettings = new List<string>();
+var trustedNetworks = new List<System.Net.IPNetwork>();
+foreach (var entry in builder.Configuration.GetSection("Proxy:TrustedNetworks").GetChildren())
+{
+    if (System.Net.IPNetwork.TryParse(entry.Value?.Trim(), out var network))
+    {
+        trustedNetworks.Add(network);
+    }
+    else
+    {
+        invalidProxySettings.Add($"{entry.Path}='{entry.Value}'");
+    }
+}
+
+var forwardLimit = 1;
+if (builder.Configuration["Proxy:ForwardLimit"] is { } forwardLimitSetting)
+{
+    if (int.TryParse(forwardLimitSetting, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+    {
+        forwardLimit = parsed;
+    }
+    else
+    {
+        invalidProxySettings.Add($"Proxy:ForwardLimit='{forwardLimitSetting}'");
+    }
+}
+
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardLimit = builder.Configuration.GetValue("Proxy:ForwardLimit", 1);
+    options.ForwardLimit = forwardLimit;
 
     options.KnownProxies.Clear();
     options.KnownIPNetworks.Clear();
-
-    var trustedNetworks = builder.Configuration.GetSection("Proxy:TrustedNetworks").Get<string[]>() ?? [];
     foreach (var network in trustedNetworks)
     {
-        options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+        options.KnownIPNetworks.Add(network);
     }
 
     // The scheme travels with the address or not at all: UseHttpsRedirection below reads
     // Request.Scheme, and behind a proxy that terminates TLS and forwards plain HTTP that is "http"
     // for every request unless X-Forwarded-Proto is honoured. Trusting one header and not the other
     // leaves the redirect middleware working from a scheme it can never see corrected.
-    options.ForwardedHeaders = trustedNetworks.Length == 0
+    options.ForwardedHeaders = trustedNetworks.Count == 0
         ? ForwardedHeaders.None
         : ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
 });
@@ -99,20 +128,32 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        ClientPartitionKey.For(context),
         _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    // Split from "auth" because the storefront calls refresh on every page load to restore a
+    // session, signed in or not, and sharing login's budget let ordinary browsing lock everyone out
+    // of signing in. A request with no refresh cookie is rejected before any database work, so it
+    // costs nothing worth limiting; with one, the budget is per client.
+    options.AddPolicy("refresh", context => context.Request.Cookies.ContainsKey(ApiEndpoints.RefreshCookie)
+        ? RateLimitPartition.GetFixedWindowLimiter(
+            ClientPartitionKey.For(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            })
+        : RateLimitPartition.GetNoLimiter("no-refresh-cookie"));
     // Partitioned by account rather than IP: these routes require authentication, and the abuse
     // being bounded is one account inflating its own collection. This is why UseRateLimiter runs
     // after UseAuthentication below — HttpContext.User is empty before it.
     options.AddPolicy("favorites", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
-            ?? context.Connection.RemoteIpAddress?.ToString()
-            ?? "unknown",
+        context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? ClientPartitionKey.For(context),
         _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 60,
@@ -120,7 +161,7 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
         }));
     options.AddPolicy("assistant", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        ClientPartitionKey.For(context),
         _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 20,
@@ -131,7 +172,7 @@ builder.Services.AddRateLimiter(options =>
     // (see the search bounds in CatalogueService), so it needs a ceiling of its own. Set generously:
     // a storefront session legitimately fires a burst of these while a shopper filters and pages.
     options.AddPolicy("catalogue", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        ClientPartitionKey.For(context),
         _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 120,
@@ -142,9 +183,7 @@ builder.Services.AddRateLimiter(options =>
     // the same abuse ceiling as login, but it is authenticated and the subject being protected is
     // one account rather than one address.
     options.AddPolicy("password", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
-            ?? context.Connection.RemoteIpAddress?.ToString()
-            ?? "unknown",
+        context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? ClientPartitionKey.For(context),
         _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
@@ -154,23 +193,34 @@ builder.Services.AddRateLimiter(options =>
 });
 var app = builder.Build();
 
-// With no trusted network the forwarded headers are ignored (above), so behind a proxy
-// RemoteIpAddress is the ingress for every caller and each per-IP partition collapses into one
-// global bucket: "auth" becomes 10 requests per minute for the whole world, "assistant" 20 per hour
-// and "catalogue" 120 per minute. This used to refuse to start, but the ingress range has not been
-// measured yet (see README "Proxy trust boundary"), so it warns loudly instead of blocking deploys.
+if (invalidProxySettings.Count > 0)
+{
+    var logInvalidProxySettings = LoggerMessage.Define<string>(
+        LogLevel.Warning,
+        new EventId(2, "InvalidProxySettings"),
+        "Ignoring invalid proxy settings: {Settings}");
+    logInvalidProxySettings(app.Logger, string.Join(", ", invalidProxySettings), null);
+}
+
+// With neither the edge secret (EdgeClientAddress) nor a trusted network, RemoteIpAddress behind a
+// proxy is the ingress for every caller and each per-IP partition collapses into one global bucket:
+// "auth" becomes 10 requests per minute for the whole world, "assistant" 20 per hour and
+// "catalogue" 120 per minute. Warn, never refuse: refusing to start failed the Railway healthcheck
+// on the PR #46 deploy, and the shared bucket is the lesser outage.
 if (app.Environment.IsProduction()
-    && app.Configuration.GetSection("Proxy:TrustedNetworks").Get<string[]>() is not { Length: > 0 })
+    && trustedNetworks.Count == 0
+    && !EdgeClientAddress.IsConfigured(app.Configuration))
 {
     var logProxyTrustUnset = LoggerMessage.Define(
         LogLevel.Warning,
         new EventId(1, "ProxyTrustUnset"),
-        "Proxy:TrustedNetworks is not set in Production. Every request appears to originate from " +
-        "the ingress, so the per-IP rate limits share a single global bucket.");
+        "Neither Proxy:EdgeSecret nor Proxy:TrustedNetworks is set in Production. Every request " +
+        "appears to originate from the ingress, so the per-IP rate limits share a single global bucket.");
     logProxyTrustUnset(app.Logger, null);
 }
 
 app.UseForwardedHeaders();
+app.UseEdgeClientAddress();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseCors();
