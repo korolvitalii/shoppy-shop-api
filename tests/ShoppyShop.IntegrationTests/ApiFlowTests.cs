@@ -191,6 +191,47 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task CatalogueCopyMigrationMatchesTheSeedAndLeavesEditedProductsAlone()
+    {
+        // Round-trips a freshly seeded catalogue through the copy migration's Down and Up. Down has
+        // to put every row back on the original placeholder copy, which is exactly the state a
+        // database seeded before this change is in; Up from there has to land every row back on
+        // what catalogue.json seeds, or an upgraded database and a fresh one would disagree.
+        // A product edited in between stands in for an administrator's change through the admin
+        // API, which neither direction may overwrite.
+        await Factory.Services.InitializeDatabaseAsync(Factory.Services.GetRequiredService<IConfiguration>());
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var migrator = ((IInfrastructure<IServiceProvider>)dbContext.Database).Instance
+            .GetRequiredService<IMigrator>();
+
+        var seeded = await SnapshotCatalogueAsync(dbContext);
+        await dbContext.Products.IgnoreQueryFilters()
+            .Where(x => x.Id == "home-1")
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Name, "Edited by an administrator"));
+
+        await migrator.MigrateAsync("20260917134523_AddProductNewAndGiftWrappableFlags");
+        var reverted = await SnapshotCatalogueAsync(dbContext);
+
+        Assert.Equal("Refined Ceramic Table", reverted.Products["beauty-1"].Name);
+        Assert.Equal("Wehner, Ryan and D'Amore", reverted.Products["beauty-5"].Brand);
+        Assert.All(
+            reverted.Products.Where(x => x.Key != "home-1"),
+            x => Assert.StartsWith("https://picsum.photos/", x.Value.ImageUrl, StringComparison.Ordinal));
+        Assert.Equal(seeded.Products["home-1"] with { Name = "Edited by an administrator" }, reverted.Products["home-1"]);
+        Assert.NotEqual(seeded.GroupImages["accessories"], reverted.GroupImages["accessories"]);
+
+        await migrator.MigrateAsync();
+        var refreshed = await SnapshotCatalogueAsync(dbContext);
+
+        Assert.Equal(seeded.GroupImages, refreshed.GroupImages);
+        Assert.Equal(reverted.Products["home-1"], refreshed.Products["home-1"]);
+        Assert.All(
+            seeded.Products.Where(x => x.Key != "home-1"),
+            x => Assert.Equal(x.Value, refreshed.Products[x.Key]));
+    }
+
+    [Fact]
     public async Task ProductPagesAreStableAcrossEverySupportedSortOrder()
     {
         await Factory.Services.InitializeDatabaseAsync(Factory.Services.GetRequiredService<IConfiguration>());
@@ -829,8 +870,18 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
         Total = 14.99m,
     };
 
+    private static async Task<CatalogueSnapshot> SnapshotCatalogueAsync(AppDbContext dbContext) => new(
+        await dbContext.Products.IgnoreQueryFilters().AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => new ProductCopy(x.Name, x.Brand, x.Description, x.ImageUrl)),
+        await dbContext.ProductGroups.IgnoreQueryFilters().AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.ImageUrl));
+
     private HttpClient Client => client ?? throw new InvalidOperationException("Test client has not been initialized.");
     private ApiFactory Factory => factory ?? throw new InvalidOperationException("Test factory has not been initialized.");
 
     private sealed record AuthResponse(string AccessToken, DateTimeOffset AccessTokenExpiresAt, UserDto User);
+    private sealed record ProductCopy(string Name, string Brand, string Description, string ImageUrl);
+    private sealed record CatalogueSnapshot(
+        IReadOnlyDictionary<string, ProductCopy> Products,
+        IReadOnlyDictionary<string, string> GroupImages);
 }
