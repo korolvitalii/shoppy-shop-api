@@ -104,7 +104,7 @@ infra/
 * Price filtering
 * Sorting
 * Product details
-* Soft-delete catalogue administration
+* Soft-delete catalogue administration (deleting a category and saving a product into it take turns on a per-category lock, so no live product is left in a deleted category)
 
 ### Shopping assistant
 

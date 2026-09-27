@@ -43,10 +43,12 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         await strategy.ExecuteAsync(async ct =>
         {
             dbContext.ChangeTracker.Clear();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            await AcquireGroupLockAsync(id, ct);
+
             var group = await dbContext.ProductGroups.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == id, ct)
                 ?? throw new AppNotFoundException("Product group was not found.");
 
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             group.IsDeleted = true;
             await dbContext.Products.IgnoreQueryFilters()
                 .Where(x => x.GroupId == id)
@@ -63,42 +65,56 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
     {
         var (groupId, name, brand, description, imageUrl) = CatalogueWriteValidator.ValidateProduct(id, request);
 
-        if (!await dbContext.ProductGroups.IgnoreQueryFilters().AnyAsync(x => x.Id == groupId && !x.IsDeleted, cancellationToken))
+        // The category check and the save used to be separate statements with nothing between them
+        // and DeleteGroupAsync. A delete committing in that gap swept the products that existed when
+        // it ran, and this save then added or restored a live product in a deleted category, visible
+        // in every listing that does not join its group. Holding the category's lock across the check
+        // and the save makes the two operations take turns.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async ct =>
         {
-            throw new AppUnprocessableException("The product group does not exist.");
-        }
+            dbContext.ChangeTracker.Clear();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            await AcquireGroupLockAsync(groupId, ct);
 
-        var product = await dbContext.Products.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (product is null)
-        {
-            product = new Product { Id = id, GroupId = groupId, Name = name, Brand = brand, Description = description, ImageUrl = imageUrl };
-            dbContext.Products.Add(product);
-        }
+            if (!await dbContext.ProductGroups.IgnoreQueryFilters().AnyAsync(x => x.Id == groupId && !x.IsDeleted, ct))
+            {
+                throw new AppUnprocessableException("The product group does not exist.");
+            }
 
-        product.GroupId = groupId;
-        product.Name = name;
-        product.Brand = brand;
-        product.Description = description;
-        product.ImageUrl = imageUrl;
-        product.Price = request.Price;
-        product.SalePrice = request.SalePrice;
-        product.InStock = request.InStock;
-        product.IsNew = request.IsNew;
-        product.GiftWrappable = request.GiftWrappable;
-        product.IsDeleted = false;
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return new ProductDto(
-            product.Id,
-            product.GroupId,
-            product.Name,
-            product.Brand,
-            product.Description,
-            product.ImageUrl,
-            product.Price,
-            product.SalePrice,
-            product.InStock,
-            product.IsNew,
-            product.GiftWrappable);
+            var product = await dbContext.Products.IgnoreQueryFilters().SingleOrDefaultAsync(x => x.Id == id, ct);
+            if (product is null)
+            {
+                product = new Product { Id = id, GroupId = groupId, Name = name, Brand = brand, Description = description, ImageUrl = imageUrl };
+                dbContext.Products.Add(product);
+            }
+
+            product.GroupId = groupId;
+            product.Name = name;
+            product.Brand = brand;
+            product.Description = description;
+            product.ImageUrl = imageUrl;
+            product.Price = request.Price;
+            product.SalePrice = request.SalePrice;
+            product.InStock = request.InStock;
+            product.IsNew = request.IsNew;
+            product.GiftWrappable = request.GiftWrappable;
+            product.IsDeleted = false;
+            await dbContext.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return new ProductDto(
+                product.Id,
+                product.GroupId,
+                product.Name,
+                product.Brand,
+                product.Description,
+                product.ImageUrl,
+                product.Price,
+                product.SalePrice,
+                product.InStock,
+                product.IsNew,
+                product.GiftWrappable);
+        }, cancellationToken);
     }
 
     public async Task DeleteProductAsync(string id, CancellationToken cancellationToken)
@@ -108,4 +124,11 @@ public sealed class AdminCatalogueService(AppDbContext dbContext) : IAdminCatalo
         product.IsDeleted = true;
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Serializes <see cref="DeleteGroupAsync"/> against <see cref="UpsertProductAsync"/> for one
+    /// category, for the rest of the caller's transaction.
+    /// </summary>
+    private Task AcquireGroupLockAsync(string groupId, CancellationToken cancellationToken) =>
+        dbContext.Database.AcquireTransactionLockAsync(AdvisoryLocks.CatalogueGroup, groupId, cancellationToken);
 }

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 using ShoppyShop.Application;
+using ShoppyShop.Domain;
 using ShoppyShop.Infrastructure;
 
 using Testcontainers.PostgreSql;
@@ -16,6 +17,7 @@ namespace ShoppyShop.IntegrationTests;
 /// </summary>
 public sealed class ConcurrentWriteTests : IAsyncLifetime, IDisposable
 {
+    private const string GroupId = "race-group";
     private readonly PostgreSqlContainer postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
     private ApiFactory? factory;
 
@@ -96,6 +98,74 @@ public sealed class ConcurrentWriteTests : IAsyncLifetime, IDisposable
         Assert.False(await verify.RefreshSessions.AnyAsync(x => x.UserId == userId && x.RevokedAt == null));
     }
 
+    [Fact]
+    public async Task ProductSaveQueuedBehindACategoryDeleteIsRejectedOnceTheDeleteCommits()
+    {
+        await SeedGroupAsync();
+
+        Task<ProductDto> save;
+        await using (var deletion = CreateContext())
+        {
+            // DeleteGroupAsync part-way through: category lock held, category and products swept,
+            // not yet committed.
+            await using var transaction = await deletion.Database.BeginTransactionAsync();
+            await LockGroupAsync(deletion);
+            await deletion.ProductGroups.Where(x => x.Id == GroupId)
+                .ExecuteUpdateAsync(x => x.SetProperty(g => g.IsDeleted, true));
+            await deletion.Products.IgnoreQueryFilters().Where(x => x.GroupId == GroupId)
+                .ExecuteUpdateAsync(x => x.SetProperty(p => p.IsDeleted, true));
+
+            save = SaveProductAsync("race-product");
+            await WaitForBlockedLockRequestsAsync(1);
+            await transaction.CommitAsync();
+        }
+
+        // Before the lock, the save checked the category before the delete committed, then inserted
+        // a live product into a deleted category.
+        await Assert.ThrowsAsync<AppUnprocessableException>(() => save);
+        await using var verify = CreateContext();
+        Assert.False(await verify.Products.IgnoreQueryFilters().AnyAsync(x => x.Id == "race-product" && !x.IsDeleted));
+    }
+
+    [Fact]
+    public async Task CategoryDeleteQueuedBehindAProductSaveSweepsTheSavedProduct()
+    {
+        await SeedGroupAsync();
+
+        Task deletion;
+        await using (var save = CreateContext())
+        {
+            // UpsertProductAsync part-way through: category lock held, product inserted, not yet
+            // committed.
+            await using var transaction = await save.Database.BeginTransactionAsync();
+            await LockGroupAsync(save);
+            save.Products.Add(new Product
+            {
+                Id = "in-flight-product",
+                GroupId = GroupId,
+                Name = "In-flight product",
+                Brand = "Brand",
+                Description = "Description",
+                ImageUrl = "https://example.test/product.jpg",
+                Price = 10,
+                InStock = true,
+            });
+            await save.SaveChangesAsync();
+
+            deletion = DeleteGroupAsync();
+            await WaitForBlockedLockRequestsAsync(1);
+            await transaction.CommitAsync();
+        }
+
+        await deletion;
+
+        // Before the lock, the delete's sweep could not see the uncommitted product, finished first,
+        // and the product then committed live under a deleted category.
+        await using var verify = CreateContext();
+        var product = await verify.Products.IgnoreQueryFilters().AsNoTracking().SingleAsync(x => x.Id == "in-flight-product");
+        Assert.True(product.IsDeleted);
+    }
+
     private Task<bool> TryRefreshAsync(string refreshToken) => Task.Run(async () =>
     {
         using var scope = Factory.Services.CreateScope();
@@ -115,6 +185,38 @@ public sealed class ConcurrentWriteTests : IAsyncLifetime, IDisposable
         using var scope = Factory.Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<IAuthService>().LogoutAsync(refreshToken, CancellationToken.None);
     });
+
+    private Task<ProductDto> SaveProductAsync(string productId) => Task.Run(async () =>
+    {
+        using var scope = Factory.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<IAdminCatalogueService>().UpsertProductAsync(
+            productId,
+            new ProductWriteRequest(productId, GroupId, "Race product", "Brand", "Description", "https://example.test/product.jpg", 10, null, true),
+            CancellationToken.None);
+    });
+
+    private Task DeleteGroupAsync() => Task.Run(async () =>
+    {
+        using var scope = Factory.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IAdminCatalogueService>().DeleteGroupAsync(GroupId, CancellationToken.None);
+    });
+
+    // The key AdvisoryLocks takes: its lock space (CatalogueGroup = 1), then the id.
+    private static Task<int> LockGroupAsync(AppDbContext dbContext) =>
+        dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(1, hashtext({GroupId}))");
+
+    private async Task SeedGroupAsync()
+    {
+        await using var seed = CreateContext();
+        seed.ProductGroups.Add(new ProductGroup
+        {
+            Id = GroupId,
+            Name = "Race group",
+            Description = "Description",
+            ImageUrl = "https://example.test/group.jpg",
+        });
+        await seed.SaveChangesAsync();
+    }
 
     private async Task WaitForBlockedLockRequestsAsync(int count)
     {
