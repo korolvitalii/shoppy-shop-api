@@ -121,7 +121,7 @@ The model can use only the `search_products` and `list_categories` tools. Produc
 
 ### Customer functionality
 
-* Persistent favourites
+* Persistent favourites, capped at 500 per account (the count and the insert run under a per-account lock, so concurrent adds cannot pass the cap)
 * Shopping basket integration
 * Customer order history
 * Protected customer endpoints

@@ -34,44 +34,44 @@ public sealed class FavoritesService(AppDbContext dbContext, TimeProvider timePr
             throw new AppNotFoundException("Product was not found.");
         }
 
-        if (await dbContext.Favorites.AnyAsync(x => x.UserId == userId && x.ProductId == productId, cancellationToken))
+        // The duplicate test, the count and the insert used to be separate statements, so adds
+        // running at once for different products could all count 499 and all insert, taking the
+        // account past the cap. Holding the account's lock across all three makes concurrent adds
+        // take turns, so the cap is exact. It also settles two taps on the same product: the second
+        // finds the first's row, where it used to hit the primary key and recover from the error.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async ct =>
         {
-            return;
-        }
-
-        // GetAsync returns the whole collection unpaged, so its cost is chosen by whoever wrote it,
-        // and the unique (UserId, ProductId) key caps that at the catalogue size. Against today's 54
-        // seeded products this bound is unreachable and the count is pure overhead; it is here for
-        // the 100k-product catalogue the pagination work is aimed at, and should be revisited if
-        // that never arrives. Checked after the duplicate test so re-saving an existing favourite at
-        // the limit still succeeds. 422 matches the checkout bounds — same class of violation.
-        if (await dbContext.Favorites.CountAsync(x => x.UserId == userId, cancellationToken) >= MaxFavoritesPerUser)
-        {
-            throw new AppUnprocessableException($"A maximum of {MaxFavoritesPerUser} favourites can be saved.");
-        }
-
-        dbContext.Favorites.Add(new Favorite
-        {
-            UserId = userId,
-            ProductId = productId,
-            CreatedAt = timeProvider.GetUtcNow(),
-        });
-
-        try
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException)
-        {
-            // The check above is not atomic, so two concurrent taps can both reach the
-            // insert and the loser violates the primary key. Adding a favourite is
-            // idempotent, so confirm the row landed and treat that as success.
             dbContext.ChangeTracker.Clear();
-            if (!await dbContext.Favorites.AnyAsync(x => x.UserId == userId && x.ProductId == productId, cancellationToken))
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            await dbContext.Database.AcquireTransactionLockAsync(AdvisoryLocks.Favorites, userId.ToString(), ct);
+
+            if (await dbContext.Favorites.AnyAsync(x => x.UserId == userId && x.ProductId == productId, ct))
             {
-                throw;
+                return;
             }
-        }
+
+            // GetAsync returns the whole collection unpaged, so its cost is chosen by whoever wrote
+            // it, and the unique (UserId, ProductId) key caps that at the catalogue size. Against
+            // today's 54 seeded products this bound is unreachable and the count is pure overhead; it
+            // is here for the 100k-product catalogue the pagination work is aimed at, and should be
+            // revisited if that never arrives. Checked after the duplicate test so re-saving an
+            // existing favourite at the limit still succeeds. 422 matches the checkout bounds, the
+            // same class of violation.
+            if (await dbContext.Favorites.CountAsync(x => x.UserId == userId, ct) >= MaxFavoritesPerUser)
+            {
+                throw new AppUnprocessableException($"A maximum of {MaxFavoritesPerUser} favourites can be saved.");
+            }
+
+            dbContext.Favorites.Add(new Favorite
+            {
+                UserId = userId,
+                ProductId = productId,
+                CreatedAt = timeProvider.GetUtcNow(),
+            });
+            await dbContext.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }, cancellationToken);
     }
 
     public async Task RemoveAsync(Guid userId, string productId, CancellationToken cancellationToken)

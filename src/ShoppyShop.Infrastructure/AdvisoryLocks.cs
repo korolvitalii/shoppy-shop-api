@@ -19,6 +19,9 @@ internal static class AdvisoryLocks
     /// <summary>Per category: AdminCatalogueService's category delete against product saves.</summary>
     public const int CatalogueGroup = 1;
 
+    /// <summary>Per user: FavoritesService's count-and-insert against the favourites cap.</summary>
+    public const int Favorites = 2;
+
     /// <summary>Holds the lock until the caller's current transaction ends.</summary>
     public static async Task AcquireTransactionLockAsync(
         this DatabaseFacade database,

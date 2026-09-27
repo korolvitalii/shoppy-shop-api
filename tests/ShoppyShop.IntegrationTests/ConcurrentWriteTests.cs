@@ -166,6 +166,80 @@ public sealed class ConcurrentWriteTests : IAsyncLifetime, IDisposable
         Assert.True(product.IsDeleted);
     }
 
+    [Fact]
+    public async Task FavouriteAddQueuedBehindAnotherAtTheCapIsRejected()
+    {
+        // FavoritesService.MaxFavoritesPerUser, far past the 54 seeded products, so the products the
+        // account fills up with are made here.
+        const int cap = 500;
+        var userId = Guid.NewGuid();
+        await SeedGroupAsync();
+        await using (var seed = CreateContext())
+        {
+            for (var index = 0; index <= cap; index++)
+            {
+                seed.Products.Add(CapProduct($"cap-{index}"));
+            }
+
+            for (var index = 0; index < cap - 1; index++)
+            {
+                seed.Favorites.Add(new Favorite { UserId = userId, ProductId = $"cap-{index}", CreatedAt = DateTimeOffset.UtcNow });
+            }
+
+            await seed.SaveChangesAsync();
+        }
+
+        Task add;
+        await using (var first = CreateContext())
+        {
+            // Another add part-way through at 499: account lock held, the 500th favourite inserted,
+            // not yet committed.
+            await using var transaction = await first.Database.BeginTransactionAsync();
+            await LockFavoritesAsync(first, userId);
+            first.Favorites.Add(new Favorite { UserId = userId, ProductId = $"cap-{cap - 1}", CreatedAt = DateTimeOffset.UtcNow });
+            await first.SaveChangesAsync();
+
+            add = AddFavoriteAsync(userId, $"cap-{cap}");
+            await WaitForBlockedLockRequestsAsync(1);
+            await transaction.CommitAsync();
+        }
+
+        // Before the lock, this add also counted 499 and inserted a 501st favourite.
+        await Assert.ThrowsAsync<AppUnprocessableException>(() => add);
+        await using var verify = CreateContext();
+        Assert.Equal(cap, await verify.Favorites.CountAsync(x => x.UserId == userId));
+    }
+
+    [Fact]
+    public async Task SecondAddOfTheSameFavouriteQueuedBehindTheFirstSucceedsWithOneRow()
+    {
+        var userId = Guid.NewGuid();
+        await SeedGroupAsync();
+        await using (var seed = CreateContext())
+        {
+            seed.Products.Add(CapProduct("double-tap"));
+            await seed.SaveChangesAsync();
+        }
+
+        Task add;
+        await using (var first = CreateContext())
+        {
+            await using var transaction = await first.Database.BeginTransactionAsync();
+            await LockFavoritesAsync(first, userId);
+            first.Favorites.Add(new Favorite { UserId = userId, ProductId = "double-tap", CreatedAt = DateTimeOffset.UtcNow });
+            await first.SaveChangesAsync();
+
+            add = AddFavoriteAsync(userId, "double-tap");
+            await WaitForBlockedLockRequestsAsync(1);
+            await transaction.CommitAsync();
+        }
+
+        // Adding a favourite is idempotent: the second tap finds the first's row and succeeds.
+        await add;
+        await using var verify = CreateContext();
+        Assert.Equal(1, await verify.Favorites.CountAsync(x => x.UserId == userId));
+    }
+
     private Task<bool> TryRefreshAsync(string refreshToken) => Task.Run(async () =>
     {
         using var scope = Factory.Services.CreateScope();
@@ -201,9 +275,30 @@ public sealed class ConcurrentWriteTests : IAsyncLifetime, IDisposable
         await scope.ServiceProvider.GetRequiredService<IAdminCatalogueService>().DeleteGroupAsync(GroupId, CancellationToken.None);
     });
 
-    // The key AdvisoryLocks takes: its lock space (CatalogueGroup = 1), then the id.
+    private Task AddFavoriteAsync(Guid userId, string productId) => Task.Run(async () =>
+    {
+        using var scope = Factory.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IFavoritesService>().AddAsync(userId, productId, CancellationToken.None);
+    });
+
+    // The keys AdvisoryLocks takes: its lock space (CatalogueGroup = 1, Favorites = 2), then the id.
     private static Task<int> LockGroupAsync(AppDbContext dbContext) =>
         dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(1, hashtext({GroupId}))");
+
+    private static Task<int> LockFavoritesAsync(AppDbContext dbContext, Guid userId) =>
+        dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(2, hashtext({userId.ToString()}))");
+
+    private static Product CapProduct(string id) => new()
+    {
+        Id = id,
+        GroupId = GroupId,
+        Name = "Favourite product",
+        Brand = "Brand",
+        Description = "Description",
+        ImageUrl = "https://example.test/product.jpg",
+        Price = 10,
+        InStock = true,
+    };
 
     private async Task SeedGroupAsync()
     {
