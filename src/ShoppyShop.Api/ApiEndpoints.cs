@@ -213,7 +213,7 @@ public static class ApiEndpoints
             var key = context.Request.Headers["Idempotency-Key"].ToString();
             var order = await service.CreateAsync(context.User.UserId(), key, request, cancellationToken);
             return Results.Created($"/api/orders/{order.Id}", order);
-        });
+        }).RequireRateLimiting("orders");
     }
 
     private static void MapAdmin(RouteGroupBuilder admin)

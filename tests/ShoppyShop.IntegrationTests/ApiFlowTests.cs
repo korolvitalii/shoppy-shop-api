@@ -804,6 +804,59 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task OrderCreationIsRateLimitedPerAccount()
+    {
+        // A fresh Idempotency-Key per request made every POST a new serializable checkout, with no
+        // ceiling. The budget is per account, so one account exhausting it leaves another untouched.
+        var first = await RegisterForTokenAsync($"orders-a-{Guid.NewGuid():N}@example.test");
+        var second = await RegisterForTokenAsync($"orders-b-{Guid.NewGuid():N}@example.test");
+
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            Assert.Equal(HttpStatusCode.Created, await PlaceOrderAsync(first, $"orders-limit-{attempt}"));
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, await PlaceOrderAsync(first, "orders-limit-over"));
+        Assert.Equal(HttpStatusCode.Created, await PlaceOrderAsync(second, "orders-limit-other-account"));
+
+        // Reading history is not creation and stays outside that budget.
+        using var history = new HttpRequestMessage(HttpMethod.Get, "/api/orders");
+        history.Headers.Authorization = new AuthenticationHeaderValue("Bearer", first);
+        Assert.Equal(HttpStatusCode.OK, (await Client.SendAsync(history)).StatusCode);
+    }
+
+    private async Task<string> RegisterForTokenAsync(string email)
+    {
+        var register = await Client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest(email, "Strong!Password123", null),
+            JsonOptions);
+        register.EnsureSuccessStatusCode();
+        var auth = await register.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        return auth!.AccessToken;
+    }
+
+    private async Task<HttpStatusCode> PlaceOrderAsync(string accessToken, string idempotencyKey)
+    {
+        var order = new CreateOrderRequest(
+            [new OrderItemRequest("beauty-1", "beauty", "Name", "/image.jpg", 1, 1)],
+            new DeliveryAddress("Test Customer", "customer@example.test", "1 Test Street", "London", "SW1A 1AA", "United Kingdom"),
+            "standard",
+            new PaymentSummary("tok_test_only", "Visa", "4242"),
+            1,
+            0,
+            1);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/orders")
+        {
+            Content = JsonContent.Create(order, options: JsonOptions),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        using var response = await Client.SendAsync(request);
+        return response.StatusCode;
+    }
+
+    [Fact]
     public async Task OverlongCatalogueSearchIsRejectedRatherThanScannedPerWord()
     {
         var response = await Client.GetAsync($"/api/products?search={new string('a', 121)}");

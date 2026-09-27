@@ -131,6 +131,7 @@ The model can use only the `search_products` and `list_categories` tools. Produc
 * Client-submitted prices are never trusted
 * Order creation protected with an `Idempotency-Key`
 * Idempotency records remain valid for 24 hours
+* Order creation limited to 10 per minute per account ("orders" policy); order history reads are not limited
 * Mock payment metadata storage
 
 The application stores only:
