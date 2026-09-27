@@ -145,12 +145,13 @@ public sealed class AuthService(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
 
             // Every mutation of a user's refresh-session family — this rotation, reuse revocation
-            // below, and the revocation in ChangePasswordAsync — takes this same per-user lock before
-            // touching the family, so at most one such operation is ever in flight per user. A single
-            // claimed row's lock is not enough: waiting for it only lets a statement re-check a row it
-            // already targeted when it started, not discover a row inserted by someone else afterward.
-            // Without this, revoking "all of this user's currently live sessions" (below, and in
-            // ChangePasswordAsync) can start before a concurrent rotation's replacement session
+            // below, and the revocations in LogoutAsync and ChangePasswordAsync — takes this same
+            // per-user lock before touching the family, so at most one such operation is ever in
+            // flight per user. A single claimed row's lock is not enough: waiting for it only lets a
+            // statement re-check a row it already targeted when it started, not discover a row
+            // inserted by someone else afterward. Without this, revoking "all of this user's
+            // currently live sessions" (below, in LogoutAsync, and in ChangePasswordAsync) can
+            // start before a concurrent rotation's replacement session
             // exists in the table, and finish having never seen it — leaving that replacement live
             // despite a reuse that was, in fact, detected.
             await AcquireUserSessionLockAsync(userId, ct);
@@ -158,16 +159,31 @@ public sealed class AuthService(
             var session = await dbContext.RefreshSessions.SingleOrDefaultAsync(x => x.TokenHash == tokenHash, ct)
                 ?? throw new AppUnauthorizedException("Refresh token is invalid.");
 
-            if (session.RevokedAt is not null)
-            {
-                await RevokeFamilyAsync(userId, now, ct);
-                await transaction.CommitAsync(ct);
-                return (Result: (AuthResult?)null, ReuseDetected: true);
-            }
-
+            // Expiry is checked before revocation so an expired token is answered the same way
+            // whether or not ExpiredRecordCleanupService has deleted its row yet. Checked the other
+            // way round, an old rotated token presented once its row had expired would sign the
+            // user out everywhere, until cleanup deleted the row and the same request became a plain
+            // "invalid".
             if (session.ExpiresAt <= now)
             {
                 throw new AppUnauthorizedException("Refresh token has expired.");
+            }
+
+            if (session.RevokedAt is not null)
+            {
+                // Only a token that was rotated has been handed to someone else as well: its
+                // successor went to whoever rotated it, so seeing it again means two holders. A token
+                // revoked by logout or a password change has no successor, and presenting it again is
+                // a stale cookie, not theft. Treating that as reuse signed the user out on every other
+                // device each time an old tab retried after signing out.
+                if (session.ReplacedById is null)
+                {
+                    throw new AppUnauthorizedException("Refresh token is invalid.");
+                }
+
+                await RevokeFamilyAsync(userId, now, ct);
+                await transaction.CommitAsync(ct);
+                return (Result: (AuthResult?)null, ReuseDetected: true);
             }
 
             // A conditional update, not a tracked mutation, even though the per-user lock above
@@ -211,13 +227,58 @@ public sealed class AuthService(
             return;
         }
 
-        var hash = HashToken(refreshToken);
-        var session = await dbContext.RefreshSessions.SingleOrDefaultAsync(x => x.TokenHash == hash, cancellationToken);
-        if (session is not null && session.RevokedAt is null)
+        var tokenHash = HashToken(refreshToken);
+
+        // Lock-free, as in RefreshAsync: only which family to lock. The decision below is taken
+        // from a fresh read after the lock.
+        var userId = await dbContext.RefreshSessions.AsNoTracking()
+            .Where(x => x.TokenHash == tokenHash)
+            .Select(x => (Guid?)x.UserId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (userId is null)
         {
-            session.RevokedAt = timeProvider.GetUtcNow();
-            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
         }
+
+        // Without the lock, a refresh of the same token could rotate it between this method reading
+        // the session and writing it. The write then revoked a row that was already revoked, and the
+        // replacement the refresh had just issued stayed live for its full seven days: the user had
+        // signed out, and the session had not ended.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async ct =>
+        {
+            dbContext.ChangeTracker.Clear();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            await AcquireUserSessionLockAsync(userId.Value, ct);
+
+            var now = timeProvider.GetUtcNow();
+            var session = await dbContext.RefreshSessions.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.TokenHash == tokenHash, ct);
+
+            // Expired first, as in RefreshAsync: an expired token can no longer do anything, so it
+            // must not sign out newer sessions just because cleanup has not deleted its row yet.
+            if (session is null || session.ExpiresAt <= now)
+            {
+                return;
+            }
+
+            if (session.RevokedAt is null)
+            {
+                await dbContext.RefreshSessions
+                    .Where(x => x.Id == session.Id && x.RevokedAt == null)
+                    .ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, now), ct);
+            }
+            else if (session.ReplacedById is not null)
+            {
+                // Already rotated: either a refresh won the race above, or this cookie is a token
+                // someone else has already used. Either way its successor is out there, and the
+                // family has no marker of which rows descend from this login, so every live session
+                // goes, which is the same rule RefreshAsync applies to reuse.
+                await RevokeFamilyAsync(userId.Value, now, ct);
+            }
+
+            await transaction.CommitAsync(ct);
+        }, cancellationToken);
     }
 
     public async Task<UserDto?> GetUserAsync(Guid userId, CancellationToken cancellationToken)

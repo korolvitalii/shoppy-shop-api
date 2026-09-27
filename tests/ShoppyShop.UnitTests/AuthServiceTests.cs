@@ -130,6 +130,98 @@ public sealed class AuthServiceTests
     }
 
     [Fact]
+    public async Task LogoutAsyncWithAnAlreadyRotatedTokenAlsoEndsItsSuccessor()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        await SeedCustomerRoleAsync(fixture);
+        var initial = await CreateService(fixture).RegisterAsync(
+            new RegisterRequest("logout-rotated@example.test", "Strong!Password123", null),
+            CancellationToken.None);
+
+        // What a refresh racing the logout leaves behind once it wins: the logout arrives carrying the
+        // token that refresh has just rotated. Before the fix, logout revoked that already-revoked row
+        // again and the replacement stayed live, so signing out did not end the session.
+        var rotated = await CreateService(fixture).RefreshAsync(initial.RefreshToken, CancellationToken.None);
+        await CreateService(fixture).LogoutAsync(initial.RefreshToken, CancellationToken.None);
+
+        await Assert.ThrowsAsync<AppUnauthorizedException>(
+            () => CreateService(fixture).RefreshAsync(rotated.RefreshToken, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RefreshAsyncRejectsALoggedOutTokenWithoutSigningOutOtherDevices()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        await SeedCustomerRoleAsync(fixture);
+        var laptop = await CreateService(fixture).RegisterAsync(
+            new RegisterRequest("two-devices@example.test", "Strong!Password123", null),
+            CancellationToken.None);
+        var phone = await CreateService(fixture).LoginAsync(
+            new LoginRequest("two-devices@example.test", "Strong!Password123"),
+            CancellationToken.None);
+
+        await CreateService(fixture).LogoutAsync(laptop.RefreshToken, CancellationToken.None);
+
+        // A signed-out token has no successor, so seeing it again is a stale cookie rather than
+        // theft. It used to count as reuse and revoke every session the account had.
+        var error = await Assert.ThrowsAsync<AppUnauthorizedException>(
+            () => CreateService(fixture).RefreshAsync(laptop.RefreshToken, CancellationToken.None));
+        Assert.Equal("Refresh token is invalid.", error.Message);
+        await CreateService(fixture).RefreshAsync(phone.RefreshToken, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task RefreshAsyncRejectsAnExpiredRotatedTokenWithoutSigningOutOtherDevices()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        await SeedCustomerRoleAsync(fixture);
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero));
+        var initial = await CreateService(fixture, clock).RegisterAsync(
+            new RegisterRequest("expired-rotated@example.test", "Strong!Password123", null),
+            CancellationToken.None);
+        await CreateService(fixture, clock).RefreshAsync(initial.RefreshToken, CancellationToken.None);
+
+        clock.Advance(TimeSpan.FromDays(6));
+        var later = await CreateService(fixture, clock).LoginAsync(
+            new LoginRequest("expired-rotated@example.test", "Strong!Password123"),
+            CancellationToken.None);
+
+        // The first token is both rotated and, two days later, expired. Expiry is checked first, so
+        // the answer does not depend on whether cleanup has deleted the row yet, and the live
+        // session from the later sign-in survives.
+        clock.Advance(TimeSpan.FromDays(2));
+        var error = await Assert.ThrowsAsync<AppUnauthorizedException>(
+            () => CreateService(fixture, clock).RefreshAsync(initial.RefreshToken, CancellationToken.None));
+        Assert.Equal("Refresh token has expired.", error.Message);
+        await CreateService(fixture, clock).RefreshAsync(later.RefreshToken, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task LogoutAsyncWithAnExpiredRotatedTokenLeavesOtherSessionsAlone()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        await SeedCustomerRoleAsync(fixture);
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero));
+        var initial = await CreateService(fixture, clock).RegisterAsync(
+            new RegisterRequest("logout-expired@example.test", "Strong!Password123", null),
+            CancellationToken.None);
+        await CreateService(fixture, clock).RefreshAsync(initial.RefreshToken, CancellationToken.None);
+
+        clock.Advance(TimeSpan.FromDays(6));
+        var later = await CreateService(fixture, clock).LoginAsync(
+            new LoginRequest("logout-expired@example.test", "Strong!Password123"),
+            CancellationToken.None);
+
+        // Same rule as RefreshAsync: an expired token has no effect, so the outcome does not depend on
+        // whether cleanup has deleted its row yet. Treated as a rotated token, it used to sign out the
+        // later session for as long as its row stayed within cleanup's retention window.
+        clock.Advance(TimeSpan.FromDays(2));
+        await CreateService(fixture, clock).LogoutAsync(initial.RefreshToken, CancellationToken.None);
+
+        await CreateService(fixture, clock).RefreshAsync(later.RefreshToken, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task ChangePasswordAsyncRevokesAllActiveRefreshSessions()
     {
         using var fixture = new SqliteAppDbContextFixture();
@@ -186,10 +278,23 @@ public sealed class AuthServiceTests
         await roles.CreateAsync(new IdentityRole<Guid>("Customer"));
     }
 
-    private static AuthService CreateService(SqliteAppDbContextFixture fixture)
+    private static AuthService CreateService(SqliteAppDbContextFixture fixture, TimeProvider? timeProvider = null)
     {
         var dbContext = fixture.CreateScope();
         var (users, _) = TestSupport.CreateIdentity(dbContext);
-        return new AuthService(users, dbContext, Options.Create(TestSupport.CreateJwtOptions()), TimeProvider.System);
+        return new AuthService(
+            users,
+            dbContext,
+            Options.Create(TestSupport.CreateJwtOptions()),
+            timeProvider ?? TimeProvider.System);
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset now = start;
+
+        public void Advance(TimeSpan by) => now += by;
+
+        public override DateTimeOffset GetUtcNow() => now;
     }
 }

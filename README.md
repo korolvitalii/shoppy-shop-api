@@ -91,7 +91,8 @@ infra/
 * Short-lived JWT access tokens
 * Rotating refresh tokens
 * Refresh tokens stored as hashes
-* Refresh-token reuse detection
+* Refresh-token reuse detection (presenting a token that was already rotated ends every session; a token ended by logout or a password change is simply rejected)
+* Logout, refresh and password change serialized per user, so a logout racing a refresh still ends the session
 * Role-based endpoint authorization
 * Optional bootstrap administrator
 
@@ -148,6 +149,7 @@ Full card numbers are never processed or stored.
 * Rate limiting
 * CORS configuration
 * Liveness and readiness health checks
+* Hourly cleanup of expired refresh sessions (kept one day past expiry) and expired idempotency records, run by one instance at a time
 * OpenAPI specification
 * Scalar interactive API documentation
 
@@ -241,6 +243,7 @@ Important settings include:
 | `Proxy:TrustedNetworks`      | CIDR ranges allowed to set `X-Forwarded-For` (AWS/App Runner path only) |
 | `Proxy:ForwardLimit`         | Forwarded-header hops to process (default `1`) |
 | `Diagnostics:LogPeerAddress` | Temporarily logs peer/client address resolution per request (default `false`) |
+| `Maintenance:CleanupEnabled` | Runs the hourly expired-record cleanup (default `true`) |
 
 ### Proxy trust boundary
 

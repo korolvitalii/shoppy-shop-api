@@ -118,6 +118,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.TokenHash).HasMaxLength(64);
             entity.HasIndex(x => x.TokenHash).IsUnique();
             entity.HasIndex(x => new { x.UserId, x.ExpiresAt });
+
+            // For ExpiredRecordCleanupService, which deletes by expiry across all users. The
+            // (UserId, ExpiresAt) index above cannot serve that: its leading column is UserId.
+            entity.HasIndex(x => x.ExpiresAt);
         });
     }
 }

@@ -27,6 +27,9 @@ public sealed class ApiFactory(
             .UseSetting("BootstrapAdmin:Email", "admin@example.test")
             .UseSetting("BootstrapAdmin:Password", "Admin!IntegrationPassword123")
             .UseSetting("Database:AutoMigrate", autoMigrate ? "true" : "false")
+            // Tests that need the sweep run it themselves; a background one racing them for the
+            // cleanup lock would make their counts depend on timing.
+            .UseSetting("Maintenance:CleanupEnabled", "false")
             .ConfigureTestServices(services =>
             {
                 // Never call the real Anthropic API from tests — swap in a fake/stub model client.
