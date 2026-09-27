@@ -91,7 +91,8 @@ infra/
 * Short-lived JWT access tokens
 * Rotating refresh tokens
 * Refresh tokens stored as hashes
-* Refresh-token reuse detection
+* Refresh-token reuse detection (presenting a token that was already rotated ends every session; a token ended by logout or a password change is simply rejected)
+* Logout, refresh and password change serialized per user, so a logout racing a refresh still ends the session
 * Role-based endpoint authorization
 * Optional bootstrap administrator
 
@@ -103,7 +104,7 @@ infra/
 * Price filtering
 * Sorting
 * Product details
-* Soft-delete catalogue administration
+* Soft-delete catalogue administration (deleting a category and saving a product into it take turns on a per-category lock, so no live product is left in a deleted category)
 
 ### Shopping assistant
 
@@ -120,7 +121,7 @@ The model can use only the `search_products` and `list_categories` tools. Produc
 
 ### Customer functionality
 
-* Persistent favourites
+* Persistent favourites, capped at 500 per account (the count and the insert run under a per-account lock, so concurrent adds cannot pass the cap)
 * Shopping basket integration
 * Customer order history
 * Protected customer endpoints
@@ -131,6 +132,7 @@ The model can use only the `search_products` and `list_categories` tools. Produc
 * Client-submitted prices are never trusted
 * Order creation protected with an `Idempotency-Key`
 * Idempotency records remain valid for 24 hours
+* Order creation limited to 10 per minute per account ("orders" policy); order history reads are not limited
 * Mock payment metadata storage
 
 The application stores only:
@@ -147,6 +149,7 @@ Full card numbers are never processed or stored.
 * Rate limiting
 * CORS configuration
 * Liveness and readiness health checks
+* Hourly cleanup of expired refresh sessions (kept one day past expiry) and expired idempotency records, run by one instance at a time
 * OpenAPI specification
 * Scalar interactive API documentation
 
@@ -240,6 +243,7 @@ Important settings include:
 | `Proxy:TrustedNetworks`      | CIDR ranges allowed to set `X-Forwarded-For` (AWS/App Runner path only) |
 | `Proxy:ForwardLimit`         | Forwarded-header hops to process (default `1`) |
 | `Diagnostics:LogPeerAddress` | Temporarily logs peer/client address resolution per request (default `false`) |
+| `Maintenance:CleanupEnabled` | Runs the hourly expired-record cleanup (default `true`) |
 
 ### Proxy trust boundary
 

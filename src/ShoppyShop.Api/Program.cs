@@ -190,6 +190,19 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    // Partitioned by account, like "favorites". Each order is a serializable transaction plus a
+    // 24-hour idempotency row, and a fresh Idempotency-Key per request made checkout the one write
+    // path an account could repeat without any ceiling. Ten a minute is far above what a shopper
+    // clicking "place order" (and retrying it) produces. Applied to creation only, not the history
+    // reads, which the order-history page pages through.
+    options.AddPolicy("orders", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? ClientPartitionKey.For(context),
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 var app = builder.Build();
 

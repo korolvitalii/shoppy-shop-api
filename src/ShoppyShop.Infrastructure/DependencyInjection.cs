@@ -57,6 +57,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminCatalogueService, AdminCatalogueService>();
         services.AddSingleton<IAssistantModelClient, AnthropicAssistantModelClient>();
         services.AddScoped<IAssistantService, AssistantService>();
+        services.AddHostedService<ExpiredRecordCleanupService>();
         return services;
     }
 
