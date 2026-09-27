@@ -71,15 +71,15 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
         Assert.NotNull(firstPage);
         Assert.Equal(6, groups.Length);
 
-        // The seeded catalogue is 54 products against a default page of 24, so the listing is paged
+        // The seeded catalogue is 90 products against a default page of 24, so the listing is paged
         // and the client is expected to follow the cursor.
         Assert.Equal(24, firstPage.Items.Count);
         Assert.NotNull(firstPage.NextCursor);
 
         var ids = await DrainProductsAsync("/api/products");
 
-        Assert.Equal(54, ids.Count);
-        Assert.Equal(54, ids.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(90, ids.Count);
+        Assert.Equal(90, ids.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
@@ -87,14 +87,13 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
     {
         await Factory.Services.InitializeDatabaseAsync(Factory.Services.GetRequiredService<IConfiguration>());
 
-        // The frontend seed's isNew/giftWrappable values come from a deterministic 1-in-6 / 1-in-3
-        // spread over the product list, so both filters are guaranteed to select a non-empty,
-        // non-total subset of the 54 seeded products.
+        // The frontend seed marks some products, but not all, as new and as gift-wrappable, so both
+        // filters are guaranteed to select a non-empty, non-total subset of the 90 seeded products.
         var newOnly = await Client.GetFromJsonAsync<ProductPageDto>("/api/products?isNew=true&limit=100", JsonOptions);
         Assert.NotNull(newOnly);
         Assert.All(newOnly.Items, product => Assert.True(product.IsNew));
         Assert.NotEmpty(newOnly.Items);
-        Assert.NotEqual(54, newOnly.Items.Count);
+        Assert.NotEqual(90, newOnly.Items.Count);
 
         var giftWrappableOnly = await Client.GetFromJsonAsync<ProductPageDto>("/api/products?giftWrappable=true&limit=100", JsonOptions);
         Assert.NotNull(giftWrappableOnly);
@@ -105,7 +104,7 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
         // absent once a cursor says this is a later page of the same listing.
         var firstPage = await Client.GetFromJsonAsync<ProductPageDto>("/api/products", JsonOptions);
         Assert.NotNull(firstPage);
-        Assert.Equal(54, firstPage.TotalCount);
+        Assert.Equal(90, firstPage.TotalCount);
 
         var secondPage = await Client.GetFromJsonAsync<ProductPageDto>(
             $"/api/products?cursor={Uri.EscapeDataString(firstPage.NextCursor!)}",
@@ -229,6 +228,48 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
         Assert.All(
             seeded.Products.Where(x => x.Key != "home-1"),
             x => Assert.Equal(x.Value, refreshed.Products[x.Key]));
+    }
+
+    [Fact]
+    public async Task AddedCatalogueProductsMigrationMatchesTheSeedAndLeavesEditedProductsAlone()
+    {
+        // Round-trips a freshly seeded catalogue through the migration that added products -10 to -15
+        // of every group. Down has to remove exactly those products, which is the state a database
+        // seeded before them is in; Up from there has to add them back exactly as catalogue.json
+        // seeds them, prices and flags included, or an upgraded database and a fresh one would
+        // disagree. An edited product stands in for an administrator's change, which neither
+        // direction may overwrite or remove.
+        await Factory.Services.InitializeDatabaseAsync(Factory.Services.GetRequiredService<IConfiguration>());
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var migrator = ((IInfrastructure<IServiceProvider>)dbContext.Database).Instance
+            .GetRequiredService<IMigrator>();
+        var migrations = dbContext.Database.GetMigrations().ToList();
+        var beforeAddedProducts = migrations[migrations.FindIndex(x => x.EndsWith("_AddCatalogueProducts", StringComparison.Ordinal)) - 1];
+
+        var seeded = await SnapshotProductsAsync(dbContext);
+        Assert.Equal(90, seeded.Count);
+        await dbContext.Products.IgnoreQueryFilters()
+            .Where(x => x.Id == "gifts-15")
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Name, "Edited by an administrator"));
+
+        await migrator.MigrateAsync(beforeAddedProducts);
+        var reverted = await SnapshotProductsAsync(dbContext);
+
+        Assert.Equal(55, reverted.Count);
+        Assert.Equal(seeded["gifts-15"] with { Name = "Edited by an administrator" }, reverted["gifts-15"]);
+        Assert.All(
+            reverted.Where(x => x.Key != "gifts-15"),
+            x => Assert.Equal(seeded[x.Key], x.Value));
+
+        await migrator.MigrateAsync();
+        var refreshed = await SnapshotProductsAsync(dbContext);
+
+        Assert.Equal(reverted["gifts-15"], refreshed["gifts-15"]);
+        Assert.Equal(seeded.Keys.Order(StringComparer.Ordinal), refreshed.Keys.Order(StringComparer.Ordinal));
+        Assert.All(
+            seeded.Where(x => x.Key != "gifts-15"),
+            x => Assert.Equal(x.Value, refreshed[x.Key]));
     }
 
     [Fact]
@@ -929,11 +970,40 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
         await dbContext.ProductGroups.IgnoreQueryFilters().AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => x.ImageUrl));
 
+    private static Task<Dictionary<string, ProductRow>> SnapshotProductsAsync(AppDbContext dbContext) =>
+        dbContext.Products.IgnoreQueryFilters().AsNoTracking()
+            .ToDictionaryAsync(
+                x => x.Id,
+                x => new ProductRow(
+                    x.GroupId,
+                    x.Name,
+                    x.Brand,
+                    x.Description,
+                    x.ImageUrl,
+                    x.Price,
+                    x.SalePrice,
+                    x.InStock,
+                    x.IsNew,
+                    x.GiftWrappable,
+                    x.IsDeleted));
+
     private HttpClient Client => client ?? throw new InvalidOperationException("Test client has not been initialized.");
     private ApiFactory Factory => factory ?? throw new InvalidOperationException("Test factory has not been initialized.");
 
     private sealed record AuthResponse(string AccessToken, DateTimeOffset AccessTokenExpiresAt, UserDto User);
     private sealed record ProductCopy(string Name, string Brand, string Description, string ImageUrl);
+    private sealed record ProductRow(
+        string GroupId,
+        string Name,
+        string Brand,
+        string Description,
+        string ImageUrl,
+        decimal Price,
+        decimal? SalePrice,
+        bool InStock,
+        bool IsNew,
+        bool GiftWrappable,
+        bool IsDeleted);
     private sealed record CatalogueSnapshot(
         IReadOnlyDictionary<string, ProductCopy> Products,
         IReadOnlyDictionary<string, string> GroupImages);

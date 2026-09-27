@@ -169,7 +169,7 @@ public sealed class ConcurrentWriteTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task FavouriteAddQueuedBehindAnotherAtTheCapIsRejected()
     {
-        // FavoritesService.MaxFavoritesPerUser, far past the 54 seeded products, so the products the
+        // FavoritesService.MaxFavoritesPerUser, far past the 90 seeded products, so the products the
         // account fills up with are made here.
         const int cap = 500;
         var userId = Guid.NewGuid();
