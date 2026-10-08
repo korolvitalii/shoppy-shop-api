@@ -268,7 +268,7 @@ Important settings include:
 
 ### Proxy trust boundary
 
-In production, browsers reach the API through the frontend's Vercel `/api` rewrite and then Railway's edge. The connecting peer is therefore Railway's proxy for every caller, and without more information every per-IP rate-limit partition ("auth", "refresh", "assistant", "catalogue") would collapse into one global bucket.
+In production, browsers reach the API through the frontend's Vercel `/api` rewrite and then Railway's edge. The connecting peer is therefore Railway's proxy for every caller, and without more information every per-IP rate-limit partition ("auth", "refresh", "logout", "assistant", "catalogue") would collapse into one global bucket.
 
 **Edge client address.** The frontend's Vercel Routing Middleware overwrites two headers on every `/api` request: `X-Shoppy-Client-Ip` (the visitor's address as Vercel saw it) and `X-Shoppy-Edge-Secret`. The API sets `RemoteIpAddress` from the first only when the second matches `Proxy:EdgeSecret` (constant-time comparison), then removes both headers. A caller who skips Vercel and calls the Railway host directly cannot forge an address without the secret, so they just share the ingress bucket. `Proxy:EdgeSecret` (Railway variable `Proxy__EdgeSecret`) must equal the frontend's `SHOPPY_EDGE_SECRET` Vercel variable. A mismatch or a missing value degrades to the shared bucket; it never stops the API from starting.
 
@@ -276,7 +276,7 @@ Range-based trust (`Proxy:TrustedNetworks`) can't solve this deployment on its o
 
 **No proxy setting can stop the API from starting.** Invalid `Proxy:TrustedNetworks` or `Proxy:ForwardLimit` values are skipped with a warning. In Production, the API also warns when neither `Proxy:EdgeSecret` nor `Proxy:TrustedNetworks` is set. A startup refusal was tried once and failed the Railway healthcheck.
 
-`/api/auth/refresh` has its own "refresh" policy (30 per minute per client) instead of sharing "auth" (10 per minute, login and register). The storefront calls refresh on every page load, and a refresh request without the `shoppy.refresh` cookie is not limited at all: it is rejected before any database work.
+`/api/auth/refresh` has its own "refresh" policy (30 per minute per client) instead of sharing "auth" (10 per minute, login and register). The storefront calls refresh on every page load, and a refresh request without the `shoppy.refresh` cookie is not limited at all: it is rejected before any database work. `/api/auth/logout` follows the same rule under its own "logout" policy (10 per minute per client): with a cookie it looks the token up, without one it does no database work and is not limited.
 
 Rate-limit counters are kept in memory per instance, so with N replicas each limit is effectively N times higher.
 
