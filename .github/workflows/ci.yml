@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
     branches: [develop]
+  # deploy.yml runs this same job as its gate, so a deploy is held to every check here, not to a
+  # copy of some of them that can drift.
+  workflow_call:
 
 permissions:
   contents: read

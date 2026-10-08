@@ -382,6 +382,7 @@ The workflow in `.github/workflows/ci.yml` runs on:
 
 * Every pull request
 * Every push to `develop`
+* Every deployment, as the job `deploy.yml` must pass first (via `workflow_call`)
 
 The pipeline performs:
 
@@ -443,7 +444,9 @@ The deployment workflow is defined in:
 .github/workflows/deploy.yml
 ```
 
-Every push to `main` builds and tests the solution, then deploys the repository to the Railway production service.
+Every push to `main` first runs the whole CI workflow above on that commit — tests, NuGet audit, formatting, CDK synthesis, container build and Trivy scan — and deploys to the Railway production service only if all of it passes.
+
+Railway builds the `Dockerfile` itself rather than receiving the image CI scanned. Both builds start from the same inputs: the base images are pinned by digest (Dependabot proposes digest bumps) and NuGet restores in locked mode.
 
 Configure the following GitHub Actions values before enabling deployment:
 
