@@ -114,9 +114,21 @@ public sealed class AssistantService(
         // a broad tool search reads six rows out of the database instead of the whole catalogue.
         var query = new ProductQuery(search, sort, min, max, Limit: MaxProductsReturned);
 
-        var page = string.IsNullOrWhiteSpace(groupId)
-            ? await catalogueService.GetProductsAsync(query, cancellationToken)
-            : await catalogueService.GetGroupProductsAsync(groupId, query, cancellationToken);
+        ProductPageDto page;
+        try
+        {
+            page = string.IsNullOrWhiteSpace(groupId)
+                ? await catalogueService.GetProductsAsync(query, cancellationToken)
+                : await catalogueService.GetGroupProductsAsync(groupId, query, cancellationToken);
+        }
+        catch (AppValidationException ex)
+        {
+            // These arguments came from the model, not the customer. Letting the exception escape
+            // answered a valid chat message with a 400; returned as a tool error, the model sees
+            // which rule it broke and can search again within the same request.
+            return (JsonSerializer.Serialize(new { error = ex.Message, errors = ex.Errors }), [], true);
+        }
+
         var capped = page.Items.ToList();
 
         var trimmed = capped.Select(p => new

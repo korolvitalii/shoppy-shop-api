@@ -118,7 +118,7 @@ infra/
 * Messages limited to 1,000 characters
 * Fixed-window rate limit of 20 requests per IP per hour
 
-The model can use only the `search_products` and `list_categories` tools. Product cards are accepted only when their identifiers came from the current catalogue tool results.
+The model can use only the `search_products` and `list_categories` tools. Product cards are accepted only when their identifiers came from the current catalogue tool results. A tool argument the catalogue rejects (a search over 120 characters, for example) goes back to the model as a tool error it can retry from; it does not fail the customer's request.
 
 ### Customer functionality
 

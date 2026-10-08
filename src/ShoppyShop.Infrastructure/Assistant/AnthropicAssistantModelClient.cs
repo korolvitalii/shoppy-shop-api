@@ -131,7 +131,11 @@ internal sealed class AnthropicAssistantModelClient : IAssistantModelClient, IDi
                 ["search"] = JsonSerializer.SerializeToElement(new
                 {
                     type = "string",
-                    description = "Product keywords to match against name, brand, or description, e.g. 'waterproof jacket'. Do not put a category name here; use groupId for categories. Omit to match all products.",
+                    // The catalogue's own bound, so the model is told the limit it would otherwise
+                    // learn only by being rejected. A hint, not a guarantee: AssistantService still
+                    // turns a rejected search into a tool error the model can retry from.
+                    maxLength = CatalogueService.MaxSearchLength,
+                    description = "Product keywords to match against name, brand, or description, e.g. 'waterproof jacket'. Keep it to a few keywords. Do not put a category name here; use groupId for categories. Omit to match all products.",
                 }),
                 ["groupId"] = JsonSerializer.SerializeToElement(new
                 {
