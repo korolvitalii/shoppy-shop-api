@@ -255,6 +255,8 @@ public sealed class CatalogueServiceTests
     [Theory]
     [InlineData("not-a-cursor")]
     [InlineData("eyJzIjoiZmVhdHVyZWQifQ")]
+    [InlineData("eyJzIjoiZmVhdHVyZWQiLCJpIjoicDEifQ")] // {"s":"featured","i":"p1"}: no sort key
+    [InlineData("eyJzIjoiZmVhdHVyZWQiLCJrIjpudWxsLCJpIjoicDEifQ")] // {"s":"featured","k":null,"i":"p1"}
     public async Task GetProductsAsyncRejectsAMalformedCursor(string cursor)
     {
         using var fixture = new SqliteAppDbContextFixture();
