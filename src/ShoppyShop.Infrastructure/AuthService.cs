@@ -138,6 +138,15 @@ public sealed class AuthService(
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new AppUnauthorizedException("Refresh token is invalid.");
 
+        // Chosen once, outside the retried operation, so that every attempt rotates to the same
+        // successor. The execution strategy re-runs the whole operation after a transient failure,
+        // including one that arrives after the commit has already landed - the connection drops
+        // before the acknowledgement does, and the client cannot tell. A retry that drew a fresh
+        // successor would find the token already rotated by the attempt before it, call that reuse,
+        // and revoke every session the user has: this request's own successor among them.
+        var successorId = Guid.NewGuid();
+        var successorToken = NewRefreshToken();
+
         var strategy = dbContext.Database.CreateExecutionStrategy();
         var (result, reuseDetected) = await strategy.ExecuteAsync(async ct =>
         {
@@ -171,6 +180,14 @@ public sealed class AuthService(
 
             if (session.RevokedAt is not null)
             {
+                // Rotated by an earlier attempt of this same request, whose commit landed although
+                // the attempt itself failed. Answer as that attempt would have, with the successor
+                // it created - provided nothing has ended that successor since.
+                if (session.ReplacedById == successorId)
+                {
+                    return (Result: await ResumeRotationAsync(userId, successorId, successorToken, now, ct), ReuseDetected: false);
+                }
+
                 // Only a token that was rotated has been handed to someone else as well: its
                 // successor went to whoever rotated it, so seeing it again means two holders. A token
                 // revoked by logout or a password change has no successor, and presenting it again is
@@ -191,11 +208,10 @@ public sealed class AuthService(
             // in the lock (wrong key, wrong provider check, a future caller that forgets to take it)
             // fails safe as a detected reuse rather than as a silent lost update that overwrites
             // whatever another, unserialized writer just did to this row.
-            var replacementId = Guid.NewGuid();
             var claimed = await dbContext.RefreshSessions
                 .Where(x => x.Id == session.Id && x.RevokedAt == null)
                 .ExecuteUpdateAsync(
-                    x => x.SetProperty(s => s.RevokedAt, now).SetProperty(s => s.ReplacedById, replacementId),
+                    x => x.SetProperty(s => s.RevokedAt, now).SetProperty(s => s.ReplacedById, successorId),
                     ct);
 
             if (claimed == 0)
@@ -207,7 +223,7 @@ public sealed class AuthService(
 
             var user = await userManager.FindByIdAsync(userId.ToString())
                 ?? throw new AppUnauthorizedException("User no longer exists.");
-            var created = await CreateSessionAsync(user, ct, replacementId);
+            var created = await CreateSessionAsync(user, ct, successorId, successorToken);
             await transaction.CommitAsync(ct);
             return (Result: created, ReuseDetected: false);
         }, cancellationToken);
@@ -354,7 +370,60 @@ public sealed class AuthService(
     private async Task<AuthResult> CreateSessionAsync(
         AppUser user,
         CancellationToken cancellationToken,
-        Guid? sessionId = null)
+        Guid? sessionId = null,
+        string? refreshToken = null)
+    {
+        refreshToken ??= NewRefreshToken();
+        var now = timeProvider.GetUtcNow();
+        dbContext.RefreshSessions.Add(new RefreshSession
+        {
+            Id = sessionId ?? Guid.NewGuid(),
+            UserId = user.Id,
+            TokenHash = HashToken(refreshToken),
+            CreatedAt = now,
+            ExpiresAt = now.AddDays(options.RefreshTokenDays),
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return await IssueTokensAsync(user, refreshToken);
+    }
+
+    /// <summary>
+    /// Completes a rotation that an earlier attempt of the same refresh committed: the session row
+    /// already exists, so this only checks that it is still live and mints a new access token for it.
+    /// </summary>
+    /// <remarks>
+    /// The successor is matched on its token hash as well as its id, so this can hand back only the
+    /// token whose hash the earlier attempt stored. The per-user lock was released between the
+    /// attempts, so a logout or password change may have ended the successor in that gap; it is then
+    /// answered like any other ended token rather than revived.
+    /// </remarks>
+    private async Task<AuthResult> ResumeRotationAsync(
+        Guid userId,
+        Guid successorId,
+        string successorToken,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var successorHash = HashToken(successorToken);
+        var successorLive = await dbContext.RefreshSessions.AnyAsync(
+            x => x.Id == successorId && x.TokenHash == successorHash && x.RevokedAt == null && x.ExpiresAt > now,
+            cancellationToken);
+        if (!successorLive)
+        {
+            throw new AppUnauthorizedException("Refresh token is invalid.");
+        }
+
+        var user = await userManager.FindByIdAsync(userId.ToString())
+            ?? throw new AppUnauthorizedException("User no longer exists.");
+        return await IssueTokensAsync(user, successorToken);
+    }
+
+    /// <summary>
+    /// Mints an access token for <paramref name="user"/> and pairs it with
+    /// <paramref name="refreshToken"/>, whose session row the caller has already stored.
+    /// </summary>
+    private async Task<AuthResult> IssueTokensAsync(AppUser user, string refreshToken)
     {
         var now = timeProvider.GetUtcNow();
         var expiry = now.AddMinutes(options.AccessTokenMinutes);
@@ -371,17 +440,6 @@ public sealed class AuthService(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.SigningKey)),
             SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(options.Issuer, options.Audience, claims, now.UtcDateTime, expiry.UtcDateTime, credentials);
-        var refreshToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(64));
-
-        dbContext.RefreshSessions.Add(new RefreshSession
-        {
-            Id = sessionId ?? Guid.NewGuid(),
-            UserId = user.Id,
-            TokenHash = HashToken(refreshToken),
-            CreatedAt = now,
-            ExpiresAt = now.AddDays(options.RefreshTokenDays),
-        });
-        await dbContext.SaveChangesAsync(cancellationToken);
 
         return new AuthResult(
             new JwtSecurityTokenHandler().WriteToken(token),
@@ -423,6 +481,8 @@ public sealed class AuthService(
     // only needs to be a stable function of its bytes, not collision-free: a collision would just
     // serialize two unrelated users' operations against each other, never produce a wrong result.
     private static long ToAdvisoryLockKey(Guid userId) => BitConverter.ToInt64(userId.ToByteArray(), 0);
+
+    private static string NewRefreshToken() => Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(64));
 
     private static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));

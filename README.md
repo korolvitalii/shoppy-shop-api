@@ -93,6 +93,7 @@ infra/
 * Refresh tokens stored as hashes
 * Refresh-token reuse detection (presenting a token that was already rotated ends every session; a token ended by logout or a password change is simply rejected)
 * Logout, refresh and password change serialized per user, so a logout racing a refresh still ends the session
+* A refresh retried after its own commit (the connection dropped before the acknowledgement) returns the token it rotated to, instead of mistaking its own rotation for reuse
 * Role-based endpoint authorization
 * Optional bootstrap administrator
 
