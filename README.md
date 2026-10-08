@@ -180,13 +180,28 @@ Start PostgreSQL:
 docker compose up -d
 ```
 
-Run the API:
+Run the API with the HTTPS launch profile:
 
 ```powershell
-dotnet run --project src/ShoppyShop.Api
+dotnet run --project src/ShoppyShop.Api --launch-profile https
 ```
 
-Available local endpoints:
+The launch profile decides which addresses the API listens on:
+
+| Command                                                          | Base URL                                                                |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `dotnet run --project src/ShoppyShop.Api --launch-profile https` | `https://localhost:7061`, plus `http://localhost:5261` redirected to it |
+| `dotnet run --project src/ShoppyShop.Api`                        | `http://localhost:5261` only                                            |
+
+Plain `dotnet run` picks the first profile in `launchSettings.json`, which is `http`, so nothing listens on port 7061. Prefer HTTPS: the refresh-token cookie is `Secure`, so it is not sent back over plain HTTP and session refresh fails.
+
+If `https://localhost:7061` fails with a certificate error, trust the ASP.NET Core development certificate once:
+
+```powershell
+dotnet dev-certs https --trust
+```
+
+Available local endpoints, relative to the base URL:
 
 ```text
 OpenAPI specification: /openapi/v1.json
@@ -204,14 +219,19 @@ postman/ShoppyShop API.postman_collection.json
 postman/ShoppyShop API.postman_environment.json
 ```
 
-Select the **ShoppyShop API - Local** environment.
+Select the **ShoppyShop API - Local** environment and set `adminPassword` to your `BootstrapAdmin:Password` user secret.
+
+The environment targets `https://localhost:7061`, so start the API with the HTTPS launch profile, as shown in [Running locally](#running-locally). If you run plain `dotnet run` instead, set `baseUrl` to `http://localhost:5261`, but refresh-token requests will fail because the cookie is `Secure`.
 
 The collection:
 
 * Captures customer access tokens automatically
 * Captures administrator access tokens automatically
 * Uses Postman's cookie jar for refresh-token requests
-* Includes catalogue, authentication, favourite, checkout, and administration requests
+* Includes catalogue (with cursor paging), assistant, authentication, favourite, checkout, order history, and administration requests
+* Generates a fresh `Idempotency-Key` per run, so it can be re-run against the same database
+
+The assistant request calls the Anthropic API, and is billed, when `Anthropic:ApiKey` is set.
 
 ## Environment configuration
 
