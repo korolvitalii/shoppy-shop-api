@@ -56,8 +56,15 @@ public sealed record ProductCursor(
 
         try
         {
+            // All three parts are required, and System.Text.Json does not enforce that by itself: a
+            // missing property simply leaves the parameter null. A null Key went on to seek after
+            // (NULL, id), a comparison that is never true, so the client got an empty page and a
+            // 200 rather than the 400 every other malformed cursor gets.
             var cursor = JsonSerializer.Deserialize<ProductCursor>(Encoding.UTF8.GetString(buffer, 0, written));
-            return cursor is null || string.IsNullOrEmpty(cursor.Sort) || string.IsNullOrEmpty(cursor.Id)
+            return cursor is null
+                || string.IsNullOrEmpty(cursor.Sort)
+                || string.IsNullOrEmpty(cursor.Key)
+                || string.IsNullOrEmpty(cursor.Id)
                 ? null
                 : cursor;
         }

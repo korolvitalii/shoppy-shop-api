@@ -93,6 +93,7 @@ infra/
 * Refresh tokens stored as hashes
 * Refresh-token reuse detection (presenting a token that was already rotated ends every session; a token ended by logout or a password change is simply rejected)
 * Logout, refresh and password change serialized per user, so a logout racing a refresh still ends the session
+* A refresh retried after its own commit (the connection dropped before the acknowledgement) returns the token it rotated to, instead of mistaking its own rotation for reuse
 * Role-based endpoint authorization
 * Optional bootstrap administrator
 
@@ -117,7 +118,7 @@ infra/
 * Messages limited to 1,000 characters
 * Fixed-window rate limit of 20 requests per IP per hour
 
-The model can use only the `search_products` and `list_categories` tools. Product cards are accepted only when their identifiers came from the current catalogue tool results.
+The model can use only the `search_products` and `list_categories` tools. Product cards are accepted only when their identifiers came from the current catalogue tool results. A tool argument the catalogue rejects (a search over 120 characters, for example) goes back to the model as a tool error it can retry from; it does not fail the customer's request.
 
 ### Customer functionality
 
@@ -180,13 +181,28 @@ Start PostgreSQL:
 docker compose up -d
 ```
 
-Run the API:
+Run the API with the HTTPS launch profile:
 
 ```powershell
-dotnet run --project src/ShoppyShop.Api
+dotnet run --project src/ShoppyShop.Api --launch-profile https
 ```
 
-Available local endpoints:
+The launch profile decides which addresses the API listens on:
+
+| Command                                                          | Base URL                                                                |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `dotnet run --project src/ShoppyShop.Api --launch-profile https` | `https://localhost:7061`, plus `http://localhost:5261` redirected to it |
+| `dotnet run --project src/ShoppyShop.Api`                        | `http://localhost:5261` only                                            |
+
+Plain `dotnet run` picks the first profile in `launchSettings.json`, which is `http`, so nothing listens on port 7061. Prefer HTTPS: the refresh-token cookie is `Secure`, so it is not sent back over plain HTTP and session refresh fails.
+
+If `https://localhost:7061` fails with a certificate error, trust the ASP.NET Core development certificate once:
+
+```powershell
+dotnet dev-certs https --trust
+```
+
+Available local endpoints, relative to the base URL:
 
 ```text
 OpenAPI specification: /openapi/v1.json
@@ -204,14 +220,19 @@ postman/ShoppyShop API.postman_collection.json
 postman/ShoppyShop API.postman_environment.json
 ```
 
-Select the **ShoppyShop API - Local** environment.
+Select the **ShoppyShop API - Local** environment and set `adminPassword` to your `BootstrapAdmin:Password` user secret.
+
+The environment targets `https://localhost:7061`, so start the API with the HTTPS launch profile, as shown in [Running locally](#running-locally). If you run plain `dotnet run` instead, set `baseUrl` to `http://localhost:5261`, but refresh-token requests will fail because the cookie is `Secure`.
 
 The collection:
 
 * Captures customer access tokens automatically
 * Captures administrator access tokens automatically
 * Uses Postman's cookie jar for refresh-token requests
-* Includes catalogue, authentication, favourite, checkout, and administration requests
+* Includes catalogue (with cursor paging), assistant, authentication, favourite, checkout, order history, and administration requests
+* Generates a fresh `Idempotency-Key` per run, so it can be re-run against the same database
+
+The assistant request calls the Anthropic API, and is billed, when `Anthropic:ApiKey` is set.
 
 ## Environment configuration
 
@@ -247,7 +268,7 @@ Important settings include:
 
 ### Proxy trust boundary
 
-In production, browsers reach the API through the frontend's Vercel `/api` rewrite and then Railway's edge. The connecting peer is therefore Railway's proxy for every caller, and without more information every per-IP rate-limit partition ("auth", "refresh", "assistant", "catalogue") would collapse into one global bucket.
+In production, browsers reach the API through the frontend's Vercel `/api` rewrite and then Railway's edge. The connecting peer is therefore Railway's proxy for every caller, and without more information every per-IP rate-limit partition ("auth", "refresh", "logout", "assistant", "catalogue") would collapse into one global bucket.
 
 **Edge client address.** The frontend's Vercel Routing Middleware overwrites two headers on every `/api` request: `X-Shoppy-Client-Ip` (the visitor's address as Vercel saw it) and `X-Shoppy-Edge-Secret`. The API sets `RemoteIpAddress` from the first only when the second matches `Proxy:EdgeSecret` (constant-time comparison), then removes both headers. A caller who skips Vercel and calls the Railway host directly cannot forge an address without the secret, so they just share the ingress bucket. `Proxy:EdgeSecret` (Railway variable `Proxy__EdgeSecret`) must equal the frontend's `SHOPPY_EDGE_SECRET` Vercel variable. A mismatch or a missing value degrades to the shared bucket; it never stops the API from starting.
 
@@ -255,7 +276,7 @@ Range-based trust (`Proxy:TrustedNetworks`) can't solve this deployment on its o
 
 **No proxy setting can stop the API from starting.** Invalid `Proxy:TrustedNetworks` or `Proxy:ForwardLimit` values are skipped with a warning. In Production, the API also warns when neither `Proxy:EdgeSecret` nor `Proxy:TrustedNetworks` is set. A startup refusal was tried once and failed the Railway healthcheck.
 
-`/api/auth/refresh` has its own "refresh" policy (30 per minute per client) instead of sharing "auth" (10 per minute, login and register). The storefront calls refresh on every page load, and a refresh request without the `shoppy.refresh` cookie is not limited at all: it is rejected before any database work.
+`/api/auth/refresh` has its own "refresh" policy (30 per minute per client) instead of sharing "auth" (10 per minute, login and register). The storefront calls refresh on every page load, and a refresh request without the `shoppy.refresh` cookie is not limited at all: it is rejected before any database work. `/api/auth/logout` follows the same rule under its own "logout" policy (10 per minute per client): with a cookie it looks the token up, without one it does no database work and is not limited.
 
 Rate-limit counters are kept in memory per instance, so with N replicas each limit is effectively N times higher.
 
@@ -361,6 +382,7 @@ The workflow in `.github/workflows/ci.yml` runs on:
 
 * Every pull request
 * Every push to `develop`
+* Every deployment, as the job `deploy.yml` must pass first (via `workflow_call`)
 
 The pipeline performs:
 
@@ -422,7 +444,9 @@ The deployment workflow is defined in:
 .github/workflows/deploy.yml
 ```
 
-Every push to `main` builds and tests the solution, then deploys the repository to the Railway production service.
+Every push to `main` first runs the whole CI workflow above on that commit — tests, NuGet audit, formatting, CDK synthesis, container build and Trivy scan — and deploys to the Railway production service only if all of it passes.
+
+Railway builds the `Dockerfile` itself rather than receiving the image CI scanned. Both builds start from the same inputs: the base images are pinned by digest (Dependabot proposes digest bumps) and NuGet restores in locked mode.
 
 Configure the following GitHub Actions values before enabling deployment:
 

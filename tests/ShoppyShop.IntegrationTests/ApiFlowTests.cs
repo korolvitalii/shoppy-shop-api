@@ -302,6 +302,11 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
         Assert.Equal(
             HttpStatusCode.BadRequest,
             (await Client.GetAsync("/api/products?limit=5000")).StatusCode);
+
+        // {"s":"name","i":"p1"}: a name cursor without its key used to answer 200 with an empty page.
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await Client.GetAsync("/api/products?sort=name&cursor=eyJzIjoibmFtZSIsImkiOiJwMSJ9")).StatusCode);
     }
 
     private async Task<IReadOnlyList<string>> DrainProductsAsync(string url)

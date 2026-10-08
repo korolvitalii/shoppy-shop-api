@@ -19,7 +19,7 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
     // hundred predicates over a thousand-odd column comparisons and have them run twice - once for
     // the count below, once for the page. These two bounds are the cap that was missing; the long
     // term answer is a pg_trgm GIN index on Name/Brand, which makes ILIKE '%x%' indexable.
-    private const int MaxSearchLength = 120;
+    internal const int MaxSearchLength = 120;
     private const int MaxSearchTerms = 6;
 
     public async Task<IReadOnlyCollection<ProductGroupDto>> GetGroupsAsync(bool includeDeleted, CancellationToken cancellationToken)

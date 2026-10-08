@@ -209,6 +209,31 @@ public sealed class AssistantServiceTests
         Assert.Contains("must be strings", toolResult.Content, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ChatAsyncReturnsARejectedModelSearchToTheModelInsteadOfFailingTheRequest()
+    {
+        using var fixture = new SqliteAppDbContextFixture();
+        SeedProducts(fixture.DbContext, Product("jacket"));
+        var model = new FakeAssistantModelClient(
+            new AssistantModelTurn(
+                [],
+                [new AssistantToolUseBlock("tool-1", "search_products", ToolInput(new { search = new string('x', 121) }))]),
+            new AssistantModelTurn(
+                [],
+                [new AssistantToolUseBlock("tool-2", "search_products", ToolInput(new { search = "jacket" }))]),
+            new AssistantModelTurn([new AssistantTextBlock("Here is a jacket.\nRECOMMENDED_IDS: jacket")], []));
+        var service = CreateService(model, fixture.DbContext);
+
+        // The customer's message is valid; only the model's search argument is out of bounds.
+        var response = await service.ChatAsync(new AssistantChatRequest("find me a jacket"), CancellationToken.None);
+
+        var rejected = Assert.IsType<AssistantToolResultBlock>(Assert.Single(model.Calls[1][2].Content));
+        Assert.True(rejected.IsError);
+        Assert.Contains("120 characters", rejected.Content, StringComparison.Ordinal);
+        Assert.Equal("Here is a jacket.", response.Reply);
+        Assert.Equal(["jacket"], response.Products.Select(p => p.Id));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]

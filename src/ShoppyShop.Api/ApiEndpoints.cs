@@ -136,7 +136,7 @@ public static class ApiEndpoints
             await service.LogoutAsync(refreshToken, cancellationToken);
             context.Response.Cookies.Delete(RefreshCookie, RefreshCookieOptions());
             return Results.NoContent();
-        });
+        }).RequireRateLimiting("logout");
 
         auth.MapGet("/me", async (IAuthService service, HttpContext context, CancellationToken cancellationToken) =>
         {

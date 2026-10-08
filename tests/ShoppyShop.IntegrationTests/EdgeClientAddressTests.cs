@@ -99,6 +99,29 @@ public sealed class EdgeClientAddressTests : IAsyncLifetime, IDisposable
         Assert.Equal(HttpStatusCode.Unauthorized, await RefreshAsync("203.0.113.21"));
     }
 
+    [Fact]
+    public async Task LogoutWithACookieIsRateLimitedPerClient()
+    {
+        // Any cookie value costs a database lookup, so invented ones were a free way to make the API
+        // query - every one of them answered 204.
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            Assert.Equal(HttpStatusCode.NoContent, await LogoutAsync("203.0.113.30", withCookie: true));
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, await LogoutAsync("203.0.113.30", withCookie: true));
+        Assert.Equal(HttpStatusCode.NoContent, await LogoutAsync("203.0.113.31", withCookie: true));
+    }
+
+    [Fact]
+    public async Task LogoutWithoutACookieIsNeverRateLimited()
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            Assert.Equal(HttpStatusCode.NoContent, await LogoutAsync("203.0.113.40", withCookie: false));
+        }
+    }
+
     private async Task<HttpStatusCode> LoginAsync(string clientIp, string? edgeSecret)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
@@ -114,6 +137,19 @@ public sealed class EdgeClientAddressTests : IAsyncLifetime, IDisposable
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh");
         request.Headers.TryAddWithoutValidation("Cookie", "shoppy.refresh=not-a-real-token");
+        AddEdgeHeaders(request, clientIp, ApiFactory.EdgeSecret);
+        using var response = await Client.SendAsync(request);
+        return response.StatusCode;
+    }
+
+    private async Task<HttpStatusCode> LogoutAsync(string clientIp, bool withCookie)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/logout");
+        if (withCookie)
+        {
+            request.Headers.TryAddWithoutValidation("Cookie", "shoppy.refresh=not-a-real-token");
+        }
+
         AddEdgeHeaders(request, clientIp, ApiFactory.EdgeSecret);
         using var response = await Client.SendAsync(request);
         return response.StatusCode;

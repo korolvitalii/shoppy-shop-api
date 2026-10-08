@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "6c48f218-e2ec-4ef7-b913-b83a2ca68465",
     "name": "ShoppyShop API",
-    "description": "Local acceptance collection for the ShoppyShop .NET API. Select the ShoppyShop API - Local environment before running. Postman retains the secure refresh cookie automatically.",
+    "description": "Local acceptance collection for the ShoppyShop .NET API. Start the API with `dotnet run --project src/ShoppyShop.Api --launch-profile https` (plain `dotnet run` serves HTTP only, and the refresh cookie is Secure), then select the ShoppyShop API - Local environment and set adminPassword to your BootstrapAdmin:Password user secret. Postman retains the secure refresh cookie automatically.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -30,24 +30,55 @@
       "name": "Catalogue",
       "item": [
         {
+          "name": "Get feature config",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/feature-config" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Feature flags are returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().assistantEnabled).to.be.a('boolean'); });"] } }]
+        },
+        {
           "name": "Get product groups",
           "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/product-groups" },
           "event": [{ "listen": "test", "script": { "exec": ["pm.test('Six seeded groups are returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.have.length(6); });"] } }]
         },
         {
           "name": "Search and sort products",
-          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/products?search=table&sort=price-asc&price=0-50" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Product search succeeds', () => pm.response.to.have.status(200));"] } }]
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/products?search=soap&sort=price-asc&price=0-50" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Matching products are returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().items.length).to.be.above(0); });"] } }]
+        },
+        {
+          "name": "Get first page of products",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/products?limit=2" },
+          "event": [{ "listen": "test", "script": { "exec": ["const page = pm.response.json();", "pm.test('First page is returned with a total and a cursor', () => {", "  pm.response.to.have.status(200);", "  pm.expect(page.items).to.have.length(2);", "  pm.expect(page.totalCount).to.be.a('number');", "  pm.expect(page.nextCursor).to.be.a('string');", "});", "pm.environment.set('productsCursor', page.nextCursor);", "pm.environment.set('firstPageProductIds', JSON.stringify(page.items.map(x => x.id)));"] } }]
+        },
+        {
+          "name": "Get next page of products",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/products?limit=2&cursor={{productsCursor}}" },
+          "event": [{ "listen": "test", "script": { "exec": ["const page = pm.response.json();", "const firstPageIds = JSON.parse(pm.environment.get('firstPageProductIds') || '[]');", "pm.test('Next page continues after the first', () => {", "  pm.response.to.have.status(200);", "  pm.expect(page.items.length).to.be.above(0);", "  pm.expect(page.items.some(x => firstPageIds.includes(x.id))).to.be.false;", "});", "pm.test('Total is only counted on the first page', () => pm.expect(page.totalCount ?? null).to.be.null);"] } }]
         },
         {
           "name": "Get group products",
           "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/product-groups/beauty/products" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Beauty products are returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().length).to.be.above(0); });"] } }]
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Beauty products are returned', () => { pm.response.to.have.status(200); const items = pm.response.json().items; pm.expect(items.length).to.be.above(0); pm.expect(items.every(x => x.groupId === 'beauty')).to.be.true; });"] } }]
         },
         {
           "name": "Get product details",
           "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/product-groups/beauty/products/beauty-1" },
           "event": [{ "listen": "test", "script": { "exec": ["pm.test('Seeded product is returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql('beauty-1'); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Assistant",
+      "description": "Calls the Anthropic API when Anthropic:ApiKey is configured, so each run is billed. Without a key the API answers with its fallback reply instead. Limited to 20 requests per hour per client.",
+      "item": [
+        {
+          "name": "Ask the shopping assistant",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"Can you suggest a gift under 50?\"\n}" },
+            "url": "{{baseUrl}}/api/assistant/chat"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Assistant replies', () => { pm.response.to.have.status(200); const reply = pm.response.json(); pm.expect(reply.reply).to.be.a('string'); pm.expect(reply.products).to.be.an('array'); });"] } }]
         }
       ]
     },
@@ -129,7 +160,10 @@
             "body": { "mode": "raw", "raw": "{\n  \"lines\": [\n    {\n      \"productId\": \"beauty-1\",\n      \"groupId\": \"beauty\",\n      \"name\": \"Client value is ignored\",\n      \"imageUrl\": \"https://example.test/wrong.jpg\",\n      \"unitPrice\": 0.01,\n      \"quantity\": 2\n    }\n  ],\n  \"delivery\": {\n    \"name\": \"Postman Customer\",\n    \"email\": \"{{customerEmail}}\",\n    \"address\": \"1 Test Street\",\n    \"city\": \"London\",\n    \"postcode\": \"SW1A 1AA\",\n    \"country\": \"United Kingdom\"\n  },\n  \"deliveryMethod\": \"standard\",\n  \"paymentToken\": {\n    \"tokenId\": \"tok_postman_demo\",\n    \"brand\": \"Visa\",\n    \"last4\": \"4242\"\n  },\n  \"subtotal\": 0.02,\n  \"deliveryCharge\": 0,\n  \"total\": 0.02\n}" },
             "url": "{{baseUrl}}/api/orders"
           },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Order is created', () => pm.response.to.have.status(201));", "const order = pm.response.json();", "pm.environment.set('orderId', order.id);", "pm.test('Server recalculates the total', () => pm.expect(order.total).to.eql(248.93));", "pm.test('Readable order number is returned', () => pm.expect(order.id).to.match(/^ORD-\\d{5,}$/));"] } }]
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["// A fresh key per run, so a second run places a new order instead of replaying the first.", "pm.environment.set('idempotencyKey', 'postman-' + pm.variables.replaceIn('{{$guid}}'));"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('Order is created', () => pm.response.to.have.status(201));", "const order = pm.response.json();", "pm.environment.set('orderId', order.id);", "pm.test('Server recalculates the total', () => pm.expect(order.total).to.eql(248.93));", "pm.test('Readable order number is returned', () => pm.expect(order.id).to.match(/^ORD-\\d{5,}$/));"] } }
+          ]
         },
         {
           "name": "Retry identical order",
@@ -143,8 +177,13 @@
         },
         {
           "name": "Get order history",
-          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Order history is returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().length).to.be.above(0); });"] } }]
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders?limit=1" },
+          "event": [{ "listen": "test", "script": { "exec": ["const orders = pm.response.json();", "pm.test('Newest order comes first', () => {", "  pm.response.to.have.status(200);", "  pm.expect(orders).to.have.length(1);", "  pm.expect(orders[0].id).to.eql(pm.environment.get('orderId'));", "});", "// createdAt carries a '+00:00' offset, and an unencoded '+' in a query string reads as a space.", "pm.environment.set('ordersBefore', encodeURIComponent(orders[0].createdAt));", "pm.environment.set('ordersBeforeId', orders[0].id);"] } }]
+        },
+        {
+          "name": "Get earlier orders",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders?limit=1&before={{ordersBefore}}&beforeId={{ordersBeforeId}}" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Earlier page excludes the cursor order', () => { pm.response.to.have.status(200); const orders = pm.response.json(); pm.expect(orders).to.be.an('array'); pm.expect(orders.some(x => x.id === pm.environment.get('ordersBeforeId'))).to.be.false; });"] } }]
         },
         {
           "name": "Get order by number",
@@ -164,7 +203,17 @@
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" },
             "url": "{{baseUrl}}/api/auth/login"
           },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Admin login succeeds', () => pm.response.to.have.status(200));", "pm.environment.set('adminAccessToken', pm.response.json().accessToken);"] } }]
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Admin login succeeds (adminPassword must match BootstrapAdmin:Password)', () => pm.response.to.have.status(200));", "pm.environment.set('adminAccessToken', pm.response.json().accessToken);"] } }]
+        },
+        {
+          "name": "Get all Admin product groups",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/product-groups"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Admin groups include the seeded ones', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().length).to.be.at.least(6); });"] } }]
         },
         {
           "name": "Get all Admin products",
@@ -172,9 +221,9 @@
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/admin/products"
+            "url": "{{baseUrl}}/api/admin/products?limit=100"
           },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Admin catalogue is accessible', () => pm.response.to.have.status(200));"] } }]
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Admin catalogue is accessible', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().items.length).to.be.above(0); });"] } }]
         },
         {
           "name": "Create or update test group",
@@ -193,10 +242,10 @@
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
             "method": "PUT",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"id\": \"postman-product\",\n  \"groupId\": \"postman-group\",\n  \"name\": \"Postman product\",\n  \"brand\": \"Postman\",\n  \"description\": \"Created from the Postman collection\",\n  \"imageUrl\": \"https://example.test/product.jpg\",\n  \"price\": 25,\n  \"salePrice\": 20,\n  \"inStock\": true\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"id\": \"postman-product\",\n  \"groupId\": \"postman-group\",\n  \"name\": \"Postman product\",\n  \"brand\": \"Postman\",\n  \"description\": \"Created from the Postman collection\",\n  \"imageUrl\": \"https://example.test/product.jpg\",\n  \"price\": 25,\n  \"salePrice\": 20,\n  \"inStock\": true,\n  \"isNew\": true,\n  \"giftWrappable\": false\n}" },
             "url": "{{baseUrl}}/api/admin/products/postman-product"
           },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Product is upserted', () => pm.response.to.have.status(200));"] } }]
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Product is upserted', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().isNew).to.be.true; });"] } }]
         },
         {
           "name": "Deactivate test product",

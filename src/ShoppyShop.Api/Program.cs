@@ -139,16 +139,12 @@ builder.Services.AddRateLimiter(options =>
     // session, signed in or not, and sharing login's budget let ordinary browsing lock everyone out
     // of signing in. A request with no refresh cookie is rejected before any database work, so it
     // costs nothing worth limiting; with one, the budget is per client.
-    options.AddPolicy("refresh", context => context.Request.Cookies.ContainsKey(ApiEndpoints.RefreshCookie)
-        ? RateLimitPartition.GetFixedWindowLimiter(
-            ClientPartitionKey.For(context),
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 30,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-            })
-        : RateLimitPartition.GetNoLimiter("no-refresh-cookie"));
+    options.AddPolicy("refresh", context => PerClientWhenRefreshCookieSent(context, permitLimit: 30));
+    // Logout with a cookie does the same database work as refresh - a token lookup, then the
+    // per-user lock - and any value at all gets that far, so it was an unthrottled way to make the
+    // API query. Without a cookie it returns before touching the database and stays unlimited,
+    // like refresh. A shopper signs out once per session, so this budget is far smaller.
+    options.AddPolicy("logout", context => PerClientWhenRefreshCookieSent(context, permitLimit: 10));
     // Partitioned by account rather than IP: these routes require authentication, and the abuse
     // being bounded is one account inflating its own collection. This is why UseRateLimiter runs
     // after UseAuthentication below — HttpContext.User is empty before it.
@@ -264,5 +260,17 @@ await app.Services.InitializeDatabaseAsync(builder.Configuration);
 app.Run();
 
 return 0;
+
+static RateLimitPartition<string> PerClientWhenRefreshCookieSent(HttpContext context, int permitLimit) =>
+    context.Request.Cookies.ContainsKey(ApiEndpoints.RefreshCookie)
+        ? RateLimitPartition.GetFixedWindowLimiter(
+            ClientPartitionKey.For(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimit,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            })
+        : RateLimitPartition.GetNoLimiter("no-refresh-cookie");
 
 public partial class Program;
