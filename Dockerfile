@@ -1,7 +1,7 @@
 # Base images are pinned by digest, not only by tag: Railway rebuilds this file rather than deploying
 # the image CI scanned, and a tag can move between the scan and that build. Dependabot's docker
 # ecosystem proposes digest bumps, and each bump goes through the scan like any other change.
-FROM mcr.microsoft.com/dotnet/sdk:10.0.302@sha256:72dd743782f2ae7e5476fd64f6a460045e3998dc862218b80e6944cba79a01b0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.402@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa AS build
 WORKDIR /src
 
 COPY . .
