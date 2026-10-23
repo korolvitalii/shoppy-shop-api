@@ -39,7 +39,17 @@ if (Encoding.UTF8.GetByteCount(jwt.SigningKey) < 32)
     throw new InvalidOperationException("JWT signing key must contain at least 32 bytes.");
 }
 
-builder.Services.AddProblemDetails();
+// Only request validation gets a code here. Other framework responses (an unknown route, 405, 415,
+// the JWT challenge) carry none rather than a wrong one, and clients fall back to the status.
+builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
+{
+    if (context.ProblemDetails is HttpValidationProblemDetails validation)
+    {
+        context.ProblemDetails.Extensions.TryAdd("code", "validation.failed");
+        context.ProblemDetails.Extensions.TryAdd("validationIssues", validation.Errors.Keys
+            .Select(field => new ValidationIssue(field, "validation.field_invalid")).ToArray());
+    }
+});
 // Runs the DataAnnotations on the request records in ShoppyShop.Application before an endpoint sees
 // them, so malformed input is a 400 with a field map rather than whatever the first service to
 // dereference it happens to throw.
@@ -231,6 +241,14 @@ if (app.Environment.IsProduction()
 app.UseForwardedHeaders();
 app.UseEdgeClientAddress();
 app.UseExceptionHandler();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api") && !context.Request.Path.StartsWithSegments("/api/admin"))
+    {
+        context.RequestServices.GetRequiredService<CatalogueLocale>().Select(context.Request.Query["locale"]);
+    }
+    await next(context);
+});
 app.UseHttpsRedirection();
 app.UseCors();
 app.UseAuthentication();

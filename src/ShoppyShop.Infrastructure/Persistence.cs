@@ -17,6 +17,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
 {
     public DbSet<ProductGroup> ProductGroups => Set<ProductGroup>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductTranslation> ProductTranslations => Set<ProductTranslation>();
+    public DbSet<ProductGroupTranslation> ProductGroupTranslations => Set<ProductGroupTranslation>();
     public DbSet<Favorite> Favorites => Set<Favorite>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderLine> OrderLines => Set<OrderLine>();
@@ -26,6 +28,31 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<OrderLineTranslation>(entity =>
+        {
+            entity.HasKey(x => new { x.OrderLineId, x.Locale });
+            entity.Property(x => x.Locale).HasMaxLength(35);
+            entity.Property(x => x.Name).HasMaxLength(200);
+            entity.HasOne(x => x.OrderLine).WithMany(x => x.Translations)
+                .HasForeignKey(x => x.OrderLineId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ProductTranslation>(entity =>
+        {
+            entity.HasKey(x => new { x.ProductId, x.Locale });
+            entity.Property(x => x.Locale).HasMaxLength(35);
+            entity.Property(x => x.Name).HasMaxLength(200);
+            entity.HasOne(x => x.Product).WithMany(x => x.Translations).HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.Locale, x.Name, x.ProductId });
+        });
+        builder.Entity<ProductGroupTranslation>(entity =>
+        {
+            entity.HasKey(x => new { x.GroupId, x.Locale });
+            entity.Property(x => x.Locale).HasMaxLength(35);
+            entity.Property(x => x.Name).HasMaxLength(160);
+            entity.HasOne(x => x.Group).WithMany(x => x.Translations).HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade);
+        });
 
         builder.Entity<ProductGroup>(entity =>
         {

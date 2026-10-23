@@ -16,7 +16,8 @@ namespace ShoppyShop.Application;
 public sealed record ProductCursor(
     [property: JsonPropertyName("s")] string Sort,
     [property: JsonPropertyName("k")] string Key,
-    [property: JsonPropertyName("i")] string Id)
+    [property: JsonPropertyName("i")] string Id,
+    [property: JsonPropertyName("l")] string Locale = "en")
 {
     public string Encode()
     {
@@ -32,7 +33,7 @@ public sealed record ProductCursor(
     /// against a <c>price-asc</c> query would compare a name against a price and silently return the
     /// wrong window, so a mismatch is rejected rather than guessed at.
     /// </exception>
-    public static ProductCursor? Decode(string? value, string expectedSort)
+    public static ProductCursor? Decode(string? value, string expectedSort, string expectedLocale = "en")
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -40,7 +41,7 @@ public sealed record ProductCursor(
         }
 
         var cursor = TryDecode(value) ?? throw Invalid("Pagination cursor is not valid.");
-        return cursor.Sort == expectedSort
+        return cursor.Sort == expectedSort && cursor.Locale == expectedLocale
             ? cursor
             : throw Invalid("Pagination cursor does not match the requested sort order.");
     }
@@ -75,5 +76,5 @@ public sealed record ProductCursor(
     }
 
     private static AppValidationException Invalid(string message) =>
-        new(message, new Dictionary<string, string[]> { ["cursor"] = [message] });
+        new(message, new Dictionary<string, string[]> { ["cursor"] = [message] }, "catalogue.cursor_invalid");
 }

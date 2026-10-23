@@ -25,6 +25,41 @@ public sealed class ApiFlowTests : IAsyncLifetime, IDisposable
     private ApiFactory? factory;
     private HttpClient? client;
 
+    [Fact]
+    public async Task LocalizedCatalogueAndValidationUseExplicitLocaleAndStableCodes()
+    {
+        var groups = await Client.GetFromJsonAsync<ProductGroupDto[]>("/api/product-groups?locale=pl");
+        Assert.Equal("Uroda i zapachy", groups![0].Name);
+        var product = await Client.GetFromJsonAsync<ProductDto>("/api/product-groups/beauty/products/beauty-1?locale=pl");
+        Assert.Equal("Woda perfumowana z wetiwerią i cedrem", product!.Name);
+        var first = await Client.GetFromJsonAsync<ProductPageDto>("/api/products?locale=pl&sort=name&limit=2");
+        var next = await Client.GetFromJsonAsync<ProductPageDto>("/api/products?locale=pl&sort=name&limit=2&cursor=" + Uri.EscapeDataString(first!.NextCursor!));
+        Assert.Empty(first.Items.Select(x => x.Id).Intersect(next!.Items.Select(x => x.Id)));
+        var response = await Client.GetAsync("/api/products?locale=pl&cursor=invalid");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("catalogue.cursor_invalid", problem.GetProperty("code").GetString());
+        var unknown = await Client.GetAsync("/api/products?locale=unconfigured");
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+    }
+
+    [Fact]
+    public async Task TranslationBackfillSupportsExistingDatabasesAndPreservesAdminEdits()
+    {
+        await using var scope = factory!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260927160613_AddCatalogueProducts");
+        var product = await db.Products.SingleAsync(x => x.Id == "beauty-1");
+        product.Name = "Admin edited source";
+        await db.SaveChangesAsync();
+        await migrator.MigrateAsync();
+        Assert.Equal(89, await db.ProductTranslations.CountAsync());
+        Assert.Equal(6, await db.ProductGroupTranslations.CountAsync());
+        Assert.Equal("Admin edited source", (await db.Products.SingleAsync(x => x.Id == "beauty-1")).Name);
+        Assert.False(await db.ProductTranslations.AnyAsync(x => x.ProductId == "beauty-1"));
+    }
+
     public async Task InitializeAsync()
     {
         await postgres.StartAsync();

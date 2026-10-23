@@ -5,7 +5,7 @@ using ShoppyShop.Domain;
 
 namespace ShoppyShop.Infrastructure;
 
-public sealed class FavoritesService(AppDbContext dbContext, TimeProvider timeProvider) : IFavoritesService
+public sealed class FavoritesService(AppDbContext dbContext, TimeProvider timeProvider, CatalogueLocale? requestLocale = null) : IFavoritesService
 {
     private const int MaxFavoritesPerUser = 500;
 
@@ -13,18 +13,8 @@ public sealed class FavoritesService(AppDbContext dbContext, TimeProvider timePr
         await dbContext.Favorites.AsNoTracking()
             .Where(x => x.UserId == userId)
             .OrderByDescending(x => x.CreatedAt)
-            .Select(x => new ProductDto(
-                x.Product!.Id,
-                x.Product.GroupId,
-                x.Product.Name,
-                x.Product.Brand,
-                x.Product.Description,
-                x.Product.ImageUrl,
-                x.Product.Price,
-                x.Product.SalePrice,
-                x.Product.InStock,
-                x.Product.IsNew,
-                x.Product.GiftWrappable))
+            .Select(x => x.Product!)
+            .Select(CatalogueService.LocalizedProductProjection(requestLocale != null && !requestLocale.IsSource ? requestLocale.Value : null))
             .ToArrayAsync(cancellationToken);
 
     public async Task AddAsync(Guid userId, string productId, CancellationToken cancellationToken)

@@ -78,18 +78,18 @@ public sealed class AuthService(
             // microseconds while a registered one pays full PBKDF2, and the difference is trivially
             // measurable. Hash a throwaway user so both paths cost the same.
             userManager.PasswordHasher.HashPassword(new AppUser(), request.Password);
-            throw new AppUnauthorizedException("Invalid email or password.");
+            throw new AppUnauthorizedException("Invalid email or password.", "auth.invalid_credentials");
         }
 
         if (await userManager.IsLockedOutAsync(user))
         {
-            throw new AppUnauthorizedException("Invalid email or password.");
+            throw new AppUnauthorizedException("Invalid email or password.", "auth.invalid_credentials");
         }
 
         if (!await userManager.CheckPasswordAsync(user, request.Password))
         {
             await RecordFailedAccessAsync(user);
-            throw new AppUnauthorizedException("Invalid email or password.");
+            throw new AppUnauthorizedException("Invalid email or password.", "auth.invalid_credentials");
         }
 
         if (await userManager.GetAccessFailedCountAsync(user) > 0)
@@ -115,7 +115,7 @@ public sealed class AuthService(
             var current = await userManager.FindByIdAsync(user.Id.ToString());
             if (current is null || !string.Equals(current.SecurityStamp, verifiedStamp, StringComparison.Ordinal))
             {
-                throw new AppUnauthorizedException("Invalid email or password.");
+                throw new AppUnauthorizedException("Invalid email or password.", "auth.invalid_credentials");
             }
 
             var session = await CreateSessionAsync(current, ct);
@@ -487,7 +487,7 @@ public sealed class AuthService(
     private static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
-    private static void ThrowIfIdentityFailed(IdentityResult result)
+    private void ThrowIfIdentityFailed(IdentityResult result)
     {
         if (result.Succeeded)
         {
@@ -497,6 +497,20 @@ public sealed class AuthService(
         var errors = result.Errors
             .GroupBy(x => x.Code)
             .ToDictionary(x => x.Key, x => x.Select(error => error.Description).ToArray());
-        throw new AppValidationException("Identity validation failed.", errors);
+        var password = userManager.Options.Password;
+        throw new AppValidationException("Identity validation failed.", errors,
+            issues: errors.Keys.Select(code => IdentityIssue(code, password)).ToArray());
     }
+
+    /// <summary>
+    /// Clients word each rule themselves, so an issue carries the rule's code and, for the length
+    /// rule, the configured limit — never Identity's English description or a copied constant.
+    /// </summary>
+    private static ValidationIssue IdentityIssue(string code, PasswordOptions password) => code switch
+    {
+        "PasswordTooShort" => new ValidationIssue("password", "identity." + code,
+            new Dictionary<string, object> { ["minimum"] = password.RequiredLength }),
+        _ => new ValidationIssue(code.StartsWith("Password", StringComparison.Ordinal) ? "password" : "email",
+            "identity." + code),
+    };
 }

@@ -126,6 +126,7 @@ public static class DatabaseInitializer
 
         dbContext.ProductGroups.AddRange(groups);
         dbContext.Products.AddRange(products);
+        CatalogueTranslationSeed.AddTo(dbContext);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
