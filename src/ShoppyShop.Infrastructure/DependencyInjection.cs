@@ -50,6 +50,9 @@ public static class DependencyInjection
         services.Configure<AnthropicOptions>(configuration.GetSection(AnthropicOptions.SectionName));
         services.Configure<FeatureConfigOptions>(configuration.GetSection(FeatureConfigOptions.SectionName));
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped(_ => new CatalogueLocale(
+            configuration["Localization:DefaultLocale"] ?? CatalogueLocale.LegacyDefault,
+            configuration.GetSection("Localization:SupportedLocales").Get<string[]>()));
         services.AddScoped<ICatalogueService, CatalogueService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IFavoritesService, FavoritesService>();

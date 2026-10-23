@@ -314,6 +314,25 @@ namespace ShoppyShop.Infrastructure.Migrations
                     b.ToTable("OrderLines");
                 });
 
+            modelBuilder.Entity("ShoppyShop.Domain.OrderLineTranslation", b =>
+                {
+                    b.Property<Guid>("OrderLineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Locale")
+                        .HasMaxLength(35)
+                        .HasColumnType("character varying(35)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("OrderLineId", "Locale");
+
+                    b.ToTable("OrderLineTranslation");
+                });
+
             modelBuilder.Entity("ShoppyShop.Domain.OrderRequest", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -439,6 +458,82 @@ namespace ShoppyShop.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ProductGroups");
+                });
+
+            modelBuilder.Entity("ShoppyShop.Domain.ProductGroupTranslation", b =>
+                {
+                    b.Property<string>("GroupId")
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Locale")
+                        .HasMaxLength(35)
+                        .HasColumnType("character varying(35)");
+
+                    b.Property<string>("Badge")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("SourceBadge")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceDescription")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("GroupId", "Locale");
+
+                    b.ToTable("ProductGroupTranslations");
+                });
+
+            modelBuilder.Entity("ShoppyShop.Domain.ProductTranslation", b =>
+                {
+                    b.Property<string>("ProductId")
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Locale")
+                        .HasMaxLength(35)
+                        .HasColumnType("character varying(35)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("SourceDescription")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("ProductId", "Locale");
+
+                    b.HasIndex("Locale", "Name", "ProductId");
+
+                    b.ToTable("ProductTranslations");
                 });
 
             modelBuilder.Entity("ShoppyShop.Domain.RefreshSession", b =>
@@ -620,6 +715,17 @@ namespace ShoppyShop.Infrastructure.Migrations
                     b.Navigation("Order");
                 });
 
+            modelBuilder.Entity("ShoppyShop.Domain.OrderLineTranslation", b =>
+                {
+                    b.HasOne("ShoppyShop.Domain.OrderLine", "OrderLine")
+                        .WithMany("Translations")
+                        .HasForeignKey("OrderLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrderLine");
+                });
+
             modelBuilder.Entity("ShoppyShop.Domain.OrderRequest", b =>
                 {
                     b.HasOne("ShoppyShop.Domain.Order", "Order")
@@ -642,14 +748,48 @@ namespace ShoppyShop.Infrastructure.Migrations
                     b.Navigation("Group");
                 });
 
+            modelBuilder.Entity("ShoppyShop.Domain.ProductGroupTranslation", b =>
+                {
+                    b.HasOne("ShoppyShop.Domain.ProductGroup", "Group")
+                        .WithMany("Translations")
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("ShoppyShop.Domain.ProductTranslation", b =>
+                {
+                    b.HasOne("ShoppyShop.Domain.Product", "Product")
+                        .WithMany("Translations")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("ShoppyShop.Domain.Order", b =>
                 {
                     b.Navigation("Lines");
                 });
 
+            modelBuilder.Entity("ShoppyShop.Domain.OrderLine", b =>
+                {
+                    b.Navigation("Translations");
+                });
+
+            modelBuilder.Entity("ShoppyShop.Domain.Product", b =>
+                {
+                    b.Navigation("Translations");
+                });
+
             modelBuilder.Entity("ShoppyShop.Domain.ProductGroup", b =>
                 {
                     b.Navigation("Products");
+
+                    b.Navigation("Translations");
                 });
 #pragma warning restore 612, 618
         }

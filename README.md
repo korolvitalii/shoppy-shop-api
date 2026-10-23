@@ -21,6 +21,34 @@ The API provides catalogue search, a shopping assistant, authentication, favouri
 
 ## Architecture
 
+### Localization contract
+
+Storefront reads accept an explicit `locale` query parameter. `Localization:DefaultLocale` and
+`Localization:SupportedLocales` in `appsettings.json` define the available locales. Omitted locale
+uses the configured source/default locale; an unsupported locale returns a coded HTTP 400.
+
+Catalogue translations are stored by entity ID and locale, with source text and a version. Source
+edits invalidate stale translations and fall back to canonical content. Search and name sorting use
+the selected display language; pagination cursors are bound to that language. Order lines snapshot
+all available name translations at purchase time, independently of later catalogue edits.
+
+Seed translation resources live under `src/ShoppyShop.Infrastructure/Data/Translations/`. The
+additive migration backfills existing catalogues without replacing admin-edited source content.
+Adding another language requires translation records and configuration, without schema changes.
+Export the same data to the frontend from this repository. It writes two files:
+`catalogue.translations.json` (full text, for prerendering only) and `catalogue.names.json` (display
+names only, for the browser bundle):
+
+```bash
+node scripts/export-catalogue-translations.mjs
+node scripts/export-catalogue-translations.mjs --check
+```
+
+For a frontend checkout elsewhere, supply `--output=/path/to/features/catalogue/data`.
+ProblemDetails responses retain legacy `detail`/`errors` fields and add stable `code` and, when
+available, structured `validationIssues` containing field, code and parameters. Clients should
+translate recognized codes and use localized status fallbacks for unknown or legacy payloads.
+
 The application is implemented as a modular monolith divided into four main layers:
 
 ```text

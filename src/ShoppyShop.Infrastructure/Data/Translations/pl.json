@@ -1,0 +1,692 @@
+{
+  "version": 1,
+  "locale": "pl",
+  "groups": [
+    {
+      "id": "beauty",
+      "sourceName": "Beauty & fragrance",
+      "sourceDescription": "Signature scents, skincare rituals, and considered beauty essentials.",
+      "sourceBadge": "Editor’s pick",
+      "name": "Uroda i zapachy",
+      "description": "Wyjątkowe zapachy, rytuały pielęgnacyjne i starannie dobrane kosmetyki.",
+      "badge": "Wybór redakcji"
+    },
+    {
+      "id": "electronics",
+      "sourceName": "Electronics",
+      "sourceDescription": "Headphones, smart accessories, and technology designed for life on the move.",
+      "sourceBadge": "Popular",
+      "name": "Elektronika",
+      "description": "Słuchawki, inteligentne akcesoria i technologia na co dzień i w podróży.",
+      "badge": "Popularne"
+    },
+    {
+      "id": "fashion",
+      "sourceName": "Fashion",
+      "sourceDescription": "Modern wardrobe pieces selected for versatility, comfort, and lasting style.",
+      "sourceBadge": null,
+      "name": "Moda",
+      "description": "Nowoczesna garderoba dobrana z myślą o wygodzie, wszechstronności i trwałym stylu.",
+      "badge": null
+    },
+    {
+      "id": "home",
+      "sourceName": "Home & living",
+      "sourceDescription": "Objects with warmth and character for calm, expressive everyday spaces.",
+      "sourceBadge": "New",
+      "name": "Dom i wnętrze",
+      "description": "Przedmioty pełne ciepła i charakteru do spokojnych, osobistych przestrzeni.",
+      "badge": "Nowość"
+    },
+    {
+      "id": "accessories",
+      "sourceName": "Accessories",
+      "sourceDescription": "Bags, eyewear, and finishing details that make an outfit distinctly yours.",
+      "sourceBadge": null,
+      "name": "Akcesoria",
+      "description": "Torby, okulary i dodatki, które nadają stylizacji indywidualny charakter.",
+      "badge": null
+    },
+    {
+      "id": "gifts",
+      "sourceName": "Gifts",
+      "sourceDescription": "Thoughtful finds for celebrations, thank-yous, and spontaneous surprises.",
+      "sourceBadge": "Gift guide",
+      "name": "Prezenty",
+      "description": "Przemyślane upominki na święta, podziękowania i niespodzianki bez okazji.",
+      "badge": "Przewodnik po prezentach"
+    }
+  ],
+  "products": [
+    {
+      "id": "beauty-1",
+      "sourceName": "Vetiver & Cedar Eau de Parfum",
+      "sourceDescription": "A dry, woody fragrance of vetiver, cedarwood and a hint of pink pepper, in a weighted glass flacon.",
+      "name": "Woda perfumowana z wetiwerią i cedrem",
+      "description": "Wytrawny, drzewny zapach wetiwerii i cedru z nutą różowego pieprzu, w ciężkim szklanym flakonie."
+    },
+    {
+      "id": "beauty-2",
+      "sourceName": "Professional Brush Collection, 12 Piece",
+      "sourceDescription": "Twelve soft synthetic brushes for face and eyes, from a dense foundation buffer to a fine liner.",
+      "name": "Profesjonalny zestaw 12 pędzli do makijażu",
+      "description": "Dwanaście miękkich pędzli syntetycznych do twarzy i oczu: od gęstego pędzla do podkładu po cienki pędzelek do kresek."
+    },
+    {
+      "id": "beauty-3",
+      "sourceName": "Satin Lipstick in Bare Rose",
+      "sourceDescription": "A creamy satin-finish lipstick in a soft rosy nude, housed in a weighted square case.",
+      "name": "Satynowa pomadka w odcieniu Bare Rose",
+      "description": "Kremowa pomadka o satynowym wykończeniu w delikatnym, różowym odcieniu nude, w ciężkim kwadratowym etui."
+    },
+    {
+      "id": "beauty-4",
+      "sourceName": "Orange Blossom Eau de Parfum",
+      "sourceDescription": "Luminous neroli and orange blossom over soft white musk, in a hand-faceted crystal bottle.",
+      "name": "Woda perfumowana z kwiatem pomarańczy",
+      "description": "Świetliste nuty neroli i kwiatu pomarańczy na bazie delikatnego białego piżma, w ręcznie szlifowanym kryształowym flakonie."
+    },
+    {
+      "id": "beauty-5",
+      "sourceName": "Rose Quartz Facial Ritual Set",
+      "sourceDescription": "A rose quartz roller and gua sha stone paired with a nourishing facial oil for an at-home massage ritual.",
+      "name": "Zestaw do pielęgnacji twarzy z kwarcem różowym",
+      "description": "Wałek i płytka gua sha z kwarcu różowego oraz odżywczy olejek do domowego masażu twarzy."
+    },
+    {
+      "id": "beauty-6",
+      "sourceName": "Overnight Renewal Gel Cream",
+      "sourceDescription": "A cooling gel moisturiser with hyaluronic acid and niacinamide that hydrates overnight without heaviness.",
+      "name": "Regenerujący krem żelowy na noc",
+      "description": "Chłodzący krem żelowy z kwasem hialuronowym i niacynamidem, który nawilża skórę przez noc bez uczucia ciężkości."
+    },
+    {
+      "id": "beauty-7",
+      "sourceName": "Botanical Facial Oil",
+      "sourceDescription": "A lightweight blend of rosehip, jojoba and eucalyptus oils that absorbs quickly and leaves skin soft.",
+      "name": "Roślinny olejek do twarzy",
+      "description": "Lekka mieszanka olejków z dzikiej róży, jojoby i eukaliptusa, która szybko się wchłania i zmiękcza skórę."
+    },
+    {
+      "id": "beauty-8",
+      "sourceName": "Ionic Pro Hair Dryer",
+      "sourceDescription": "A lightweight, high-velocity dryer with ionic technology and three heat settings for fast, frizz-free styling.",
+      "name": "Profesjonalna suszarka do włosów z jonizacją",
+      "description": "Lekka suszarka o silnym nawiewie, z jonizacją i trzema ustawieniami temperatury, do szybkiej stylizacji bez puszenia."
+    },
+    {
+      "id": "beauty-9",
+      "sourceName": "Muted Nudes Nail Lacquer Set",
+      "sourceDescription": "Four chip-resistant lacquers in taupe, sand, blush and berry with a glossy, gel-like finish.",
+      "name": "Zestaw lakierów do paznokci w stonowanych odcieniach",
+      "description": "Cztery odporne na odpryski lakiery w odcieniach szarobrązowym, piaskowym, różowym i jagodowym, o połyskującym, żelowym wykończeniu."
+    },
+    {
+      "id": "beauty-10",
+      "sourceName": "Vitamin C Brightening Serum",
+      "sourceDescription": "A lightweight 15% vitamin C serum with ferulic acid that brightens dull skin and evens tone, in an amber dropper bottle.",
+      "name": "Rozświetlające serum z witaminą C",
+      "description": "Lekkie serum z 15% witaminy C i kwasem ferulowym, które rozświetla poszarzałą skórę i wyrównuje koloryt, w bursztynowej butelce z pipetą."
+    },
+    {
+      "id": "beauty-11",
+      "sourceName": "Kaolin Clay Purifying Mask",
+      "sourceDescription": "A creamy white-clay mask with green tea and willow bark that lifts impurities without leaving skin tight.",
+      "name": "Oczyszczająca maseczka z glinką kaolinową",
+      "description": "Kremowa maseczka z białą glinką, zieloną herbatą i korą wierzby, która usuwa zanieczyszczenia bez uczucia ściągnięcia."
+    },
+    {
+      "id": "beauty-12",
+      "sourceName": "Warm Nudes Eyeshadow Palette",
+      "sourceDescription": "Blendable matte and shimmer shades from soft champagne to deep bronze, for everything from a daytime wash to a smoky evening eye.",
+      "name": "Paleta cieni w ciepłych odcieniach nude",
+      "description": "Łatwe do rozcierania matowe i połyskujące cienie od jasnego szampana po głęboki brąz, do delikatnego makijażu dziennego i wieczorowego przydymienia."
+    },
+    {
+      "id": "beauty-13",
+      "sourceName": "Whipped Rose Body Butter",
+      "sourceDescription": "Shea and cocoa butters whipped with rose geranium into a rich, fast-absorbing cream for dry skin.",
+      "name": "Puszyste różane masło do ciała",
+      "description": "Masło shea i kakaowe ubite z olejkiem z geranium różanego w bogaty, szybko wchłaniający się krem do suchej skóry."
+    },
+    {
+      "id": "beauty-14",
+      "sourceName": "Handmade Botanical Soap Bars, Set of 4",
+      "sourceDescription": "Cold-process olive oil soaps in lavender, oatmeal, honey and charcoal, cut by hand and tied with jute twine.",
+      "name": "Zestaw 4 ręcznie robionych mydeł roślinnych",
+      "description": "Mydła z oliwy z oliwek wytwarzane na zimno, z lawendą, owsem, miodem i węglem, ręcznie krojone i przewiązane jutowym sznurkiem."
+    },
+    {
+      "id": "beauty-15",
+      "sourceName": "Rose Petal Mineral Bath Soak",
+      "sourceDescription": "Dead Sea and Epsom salts with dried rose petals and a drop of geranium oil, in a reusable glass jar.",
+      "name": "Mineralna sól do kąpieli z płatkami róży",
+      "description": "Sól z Morza Martwego i sól Epsom z suszonymi płatkami róży i kroplą olejku geraniowego, w szklanym słoiku wielokrotnego użytku."
+    },
+    {
+      "id": "electronics-1",
+      "sourceName": "Noise-Cancelling Wireless Headphones",
+      "sourceDescription": "Adaptive noise cancelling, 30-hour battery life and memory-foam ear cushions for long listening sessions.",
+      "name": "Bezprzewodowe słuchawki z redukcją hałasu",
+      "description": "Adaptacyjna redukcja hałasu, do 30 godzin pracy i nauszniki z pianki zapamiętującej kształt zapewniają wygodę podczas długiego słuchania."
+    },
+    {
+      "id": "electronics-2",
+      "sourceName": "Compact Bluetooth Speaker",
+      "sourceDescription": "A pocketable speaker with surprisingly full sound, a leather carry strap and 12 hours of playback.",
+      "name": "Kompaktowy głośnik Bluetooth",
+      "description": "Kieszonkowy głośnik o zaskakująco pełnym brzmieniu, ze skórzanym paskiem i czasem odtwarzania do 12 godzin."
+    },
+    {
+      "id": "electronics-3",
+      "sourceName": "Belt-Drive Turntable",
+      "sourceDescription": "A two-speed belt-drive turntable with a precision aluminium tonearm and a built-in phono preamp.",
+      "name": "Gramofon z napędem paskowym",
+      "description": "Gramofon z napędem paskowym i dwiema prędkościami, precyzyjnym aluminiowym ramieniem oraz wbudowanym przedwzmacniaczem gramofonowym."
+    },
+    {
+      "id": "electronics-4",
+      "sourceName": "Retro Compact Camera",
+      "sourceDescription": "A rangefinder-style compact with a 24-megapixel sensor, a fixed 23 mm lens and tactile manual dials.",
+      "name": "Kompaktowy aparat w stylu retro",
+      "description": "Aparat kompaktowy w stylu dalmierzowym, z matrycą 24 megapiksele, stałoogniskowym obiektywem 23 mm i wygodnymi pokrętłami ręcznymi."
+    },
+    {
+      "id": "electronics-5",
+      "sourceName": "Wireless Mechanical Keyboard",
+      "sourceDescription": "A compact 75% layout with hot-swappable tactile switches, multi-device Bluetooth and a Mac/Windows toggle.",
+      "name": "Bezprzewodowa klawiatura mechaniczna",
+      "description": "Kompaktowy układ 75%, wymienne przełączniki dotykowe, Bluetooth do wielu urządzeń i przełącznik Mac/Windows."
+    },
+    {
+      "id": "electronics-6",
+      "sourceName": "Glare-Free E-Reader",
+      "sourceDescription": "A 6-inch glare-free E Ink display with adjustable warm light and weeks of battery life.",
+      "name": "Czytnik e-booków z ekranem bez odblasków",
+      "description": "Sześciocalowy ekran E Ink bez odblasków, regulowane ciepłe podświetlenie i bateria wystarczająca na wiele tygodni."
+    },
+    {
+      "id": "electronics-7",
+      "sourceName": "True Wireless Earbuds",
+      "sourceDescription": "Compact earbuds with touch controls, a pocket-sized charging case and 28 hours of total playback.",
+      "name": "Całkowicie bezprzewodowe słuchawki douszne",
+      "description": "Kompaktowe słuchawki ze sterowaniem dotykowym i kieszonkowym etui ładującym, zapewniające łącznie do 28 godzin odtwarzania."
+    },
+    {
+      "id": "electronics-8",
+      "sourceName": "Minimalist Smartwatch",
+      "sourceDescription": "A round always-on display, heart-rate and sleep tracking, and a soft silicone strap in a clean design.",
+      "name": "Minimalistyczny zegarek inteligentny",
+      "description": "Okrągły, stale włączony ekran, pomiar tętna i snu oraz miękki silikonowy pasek w prostej formie."
+    },
+    {
+      "id": "electronics-9",
+      "sourceName": "Multi-Room Wi-Fi Speaker",
+      "sourceDescription": "Room-filling 360° sound, voice control and Wi-Fi streaming that groups with other speakers around the home.",
+      "name": "Głośnik Wi-Fi do systemu wielopokojowego",
+      "description": "Dźwięk 360° wypełniający pomieszczenie, sterowanie głosowe i odtwarzanie przez Wi-Fi z możliwością łączenia głośników w całym domu."
+    },
+    {
+      "id": "electronics-10",
+      "sourceName": "Broadcast Microphone with Boom Arm",
+      "sourceDescription": "A dynamic broadcast microphone with an internal shock mount, supplied on a spring-balanced desk arm for podcasts and streaming.",
+      "name": "Mikrofon do nagrań z ramieniem biurkowym",
+      "description": "Dynamiczny mikrofon z wewnętrznym zawieszeniem antywstrząsowym, na sprężynowym ramieniu biurkowym do podcastów i transmisji."
+    },
+    {
+      "id": "electronics-11",
+      "sourceName": "Silent Wireless Mouse",
+      "sourceDescription": "A slim, low-profile mouse with near-silent clicks, a rechargeable battery and both Bluetooth and USB-receiver pairing.",
+      "name": "Cicha mysz bezprzewodowa",
+      "description": "Smukła, niskoprofilowa mysz z niemal bezgłośnymi przyciskami, akumulatorem i łącznością Bluetooth lub przez odbiornik USB."
+    },
+    {
+      "id": "electronics-12",
+      "sourceName": "Full HD Home Projector",
+      "sourceDescription": "A ceiling-mountable 1080p LED projector with keystone correction and a picture of up to 150 inches for movie nights.",
+      "name": "Domowy projektor Full HD",
+      "description": "Projektor LED 1080p z możliwością montażu na suficie, korekcją trapezu i obrazem do 150 cali na filmowe wieczory."
+    },
+    {
+      "id": "electronics-13",
+      "sourceName": "Retro Portable Radio",
+      "sourceDescription": "An FM and Bluetooth radio with a carry handle, a rotary tuning dial and a 20-hour rechargeable battery.",
+      "name": "Przenośne radio w stylu retro",
+      "description": "Radio FM i Bluetooth z uchwytem, obrotowym pokrętłem strojenia i akumulatorem wystarczającym na 20 godzin pracy."
+    },
+    {
+      "id": "electronics-14",
+      "sourceName": "Wireless Charging Pad",
+      "sourceDescription": "A slim 15 W Qi charging pad with a soft-touch top and anti-slip base that charges phones and earbuds through most cases.",
+      "name": "Podkładka do ładowania bezprzewodowego",
+      "description": "Smukła ładowarka Qi o mocy 15 W, z miękką powierzchnią i antypoślizgową podstawą, ładująca telefony i słuchawki przez większość etui."
+    },
+    {
+      "id": "electronics-15",
+      "sourceName": "Flip Desk Clock",
+      "sourceDescription": "A battery-powered flip clock with crisp black-on-white number cards and a near-silent movement, on a solid pine base.",
+      "name": "Biurkowy zegar klapkowy",
+      "description": "Zasilany baterią zegar z wyraźnymi czarnymi cyframi na białych kartach, niemal bezgłośnym mechanizmem i podstawą z litej sosny."
+    },
+    {
+      "id": "fashion-1",
+      "sourceName": "Leather Biker Jacket",
+      "sourceDescription": "A classic asymmetric-zip biker in supple black lambskin, with snap lapels and zipped cuffs.",
+      "name": "Skórzana kurtka motocyklowa",
+      "description": "Klasyczna kurtka z asymetrycznym zamkiem, z miękkiej czarnej skóry jagnięcej, z klapami na zatrzaski i mankietami na zamki."
+    },
+    {
+      "id": "fashion-2",
+      "sourceName": "Brushed Cotton Crewneck Sweatshirt",
+      "sourceDescription": "A relaxed crewneck in heavyweight organic cotton, brushed on the inside for softness.",
+      "name": "Bluza z drapanej bawełny z okrągłym dekoltem",
+      "description": "Luźna bluza z grubej bawełny organicznej, drapana od wewnątrz dla większej miękkości."
+    },
+    {
+      "id": "fashion-3",
+      "sourceName": "Dotted Chambray Shirt",
+      "sourceDescription": "A soft chambray shirt with a fine white dot print, button cuffs and a relaxed fit.",
+      "name": "Koszula z tkaniny chambray w kropki",
+      "description": "Miękka koszula chambray z drobnym białym nadrukiem w kropki, mankietami na guziki i luźnym krojem."
+    },
+    {
+      "id": "fashion-4",
+      "sourceName": "Camel Wool Wrap Coat",
+      "sourceDescription": "A belted wrap coat in a warm wool blend with dropped shoulders and a mid-calf length.",
+      "name": "Wiązany wełniany płaszcz w kolorze camel",
+      "description": "Wiązany paskiem płaszcz z ciepłej mieszanki wełny, z obniżoną linią ramion i długością do połowy łydki."
+    },
+    {
+      "id": "fashion-5",
+      "sourceName": "Heritage Leather Work Boots",
+      "sourceDescription": "Full-grain leather boots with speed hooks, waxed laces and a Goodyear-welted lug sole.",
+      "name": "Klasyczne skórzane buty robocze",
+      "description": "Buty z pełnoziarnistej skóry, z haczykami do szybkiego sznurowania, woskowanymi sznurowadłami i bieżnikowaną podeszwą szytą metodą Goodyear."
+    },
+    {
+      "id": "fashion-6",
+      "sourceName": "Check Wool-Blend Blazer",
+      "sourceDescription": "An oversized double-breasted blazer in a grey Prince of Wales check.",
+      "name": "Marynarka w kratę z mieszanki wełny",
+      "description": "Obszerna dwurzędowa marynarka w szarą kratę księcia Walii."
+    },
+    {
+      "id": "fashion-7",
+      "sourceName": "Cotton Field Jacket",
+      "sourceDescription": "A roomy olive field jacket in washed cotton canvas with patch pockets and a stand collar.",
+      "name": "Bawełniana kurtka terenowa",
+      "description": "Luźna oliwkowa kurtka z pranego płótna bawełnianego, z naszywanymi kieszeniami i stójką."
+    },
+    {
+      "id": "fashion-8",
+      "sourceName": "Leather Derby Shoes",
+      "sourceDescription": "Hand-burnished tan leather derbies with a subtly perforated upper and a leather sole.",
+      "name": "Skórzane półbuty derby",
+      "description": "Ręcznie wykańczane półbuty derby z brązowej skóry, z delikatną perforacją cholewki i skórzaną podeszwą."
+    },
+    {
+      "id": "fashion-9",
+      "sourceName": "Floral Belted Midi Dress",
+      "sourceDescription": "A flowing midi dress in a bold floral print, with flutter sleeves and a woven belt.",
+      "name": "Kwiecista sukienka midi z paskiem",
+      "description": "Zwiewna sukienka midi z wyrazistym kwiatowym wzorem, falującymi rękawkami i plecionym paskiem."
+    },
+    {
+      "id": "fashion-10",
+      "sourceName": "Hand-Knit Leaf Stitch Jumper",
+      "sourceDescription": "A chunky hand-knitted jumper in soft teal wool, with a leaf-stitch panel down the front and a relaxed dropped shoulder.",
+      "name": "Ręcznie dziergany sweter we wzór liści",
+      "description": "Gruby, ręcznie dziergany sweter z miękkiej wełny w kolorze morskim, z panelem we wzór liści i swobodną linią ramion."
+    },
+    {
+      "id": "fashion-11",
+      "sourceName": "Straight-Leg Selvedge Jeans",
+      "sourceDescription": "Mid-wash straight-leg jeans in 13 oz selvedge denim that softens and fades with every wear.",
+      "name": "Proste dżinsy z denimu selvedge",
+      "description": "Dżinsy z prostą nogawką, ze średnio spranego denimu selvedge o gramaturze 13 oz, który mięknie i nabiera przetarć podczas noszenia."
+    },
+    {
+      "id": "fashion-12",
+      "sourceName": "Relaxed Linen Shirt",
+      "sourceDescription": "A breathable shirt in washed navy linen with a soft collar and a relaxed fit that works tucked in or worn loose.",
+      "name": "Luźna lniana koszula",
+      "description": "Przewiewna koszula z pranego granatowego lnu, z miękkim kołnierzykiem i luźnym krojem, do noszenia w spodniach lub na wierzchu."
+    },
+    {
+      "id": "fashion-13",
+      "sourceName": "Belted Cotton Trench Coat",
+      "sourceDescription": "A water-repellent cotton-gabardine trench in black, with a storm flap, buckled belt and cuff straps.",
+      "name": "Bawełniany trencz z paskiem",
+      "description": "Czarny trencz z wodoodpornej gabardyny bawełnianej, z karczkiem przeciwdeszczowym, paskiem ze sprzączką i paskami przy mankietach."
+    },
+    {
+      "id": "fashion-14",
+      "sourceName": "Leather Chelsea Boots",
+      "sourceDescription": "Pull-on Chelsea boots in burnished brown leather, with elastic side panels and a stitched leather sole.",
+      "name": "Skórzane sztyblety",
+      "description": "Wsuwane sztyblety z cieniowanej brązowej skóry, z elastycznymi panelami po bokach i przeszywaną skórzaną podeszwą."
+    },
+    {
+      "id": "fashion-15",
+      "sourceName": "Organic Cotton Crew T-Shirt",
+      "sourceDescription": "An everyday crew-neck T-shirt in mid-weight organic cotton jersey, cut for a clean, straight fit.",
+      "name": "Koszulka z bawełny organicznej",
+      "description": "Codzienna koszulka z okrągłym dekoltem, ze średniej grubości dżerseju z bawełny organicznej, o prostym kroju."
+    },
+    {
+      "id": "home-1",
+      "sourceName": "Velvet Three-Seater Sofa",
+      "sourceDescription": "A mid-century-inspired sofa in deep green velvet with plump cushions and tapered wooden legs.",
+      "name": "Trzyosobowa sofa welurowa",
+      "description": "Sofa inspirowana wzornictwem połowy XX wieku, w ciemnozielonym welurze, z miękkimi poduszkami i zwężanymi drewnianymi nogami."
+    },
+    {
+      "id": "home-2",
+      "sourceName": "Linen Swivel Lounge Chair",
+      "sourceDescription": "A sculpted lounge chair upholstered in textured linen, on a smooth 360° swivel base.",
+      "name": "Lniany fotel obrotowy",
+      "description": "Profilowany fotel wypoczynkowy obity fakturowanym lnem, na podstawie płynnie obracającej się o 360°."
+    },
+    {
+      "id": "home-3",
+      "sourceName": "Industrial Floor Lamp",
+      "sourceDescription": "A steel floor lamp with an adjustable dome shade and a matte graphite finish.",
+      "name": "Industrialna lampa podłogowa",
+      "description": "Stalowa lampa podłogowa z regulowanym kopułowym kloszem i matowym grafitowym wykończeniem."
+    },
+    {
+      "id": "home-4",
+      "sourceName": "Brushed Brass Dome Pendant",
+      "sourceDescription": "A spun-metal dome pendant in brushed brass that casts a warm, focused glow. Hang one alone or in a cluster.",
+      "name": "Lampa wisząca z kopułą ze szczotkowanego mosiądzu",
+      "description": "Kopułowa lampa z formowanego metalu w wykończeniu ze szczotkowanego mosiądzu, dająca ciepłe, skupione światło. Do zawieszenia pojedynczo lub w grupie."
+    },
+    {
+      "id": "home-5",
+      "sourceName": "Moulded Dining Chairs, Set of 2",
+      "sourceDescription": "Moulded shell seats with a cushioned pad on solid beech legs, easy to wipe down and comfortable for long dinners.",
+      "name": "Zestaw 2 profilowanych krzeseł do jadalni",
+      "description": "Profilowane siedziska z poduszką na nogach z litego buku, łatwe do czyszczenia i wygodne podczas długich kolacji."
+    },
+    {
+      "id": "home-6",
+      "sourceName": "Vintage-Wash Area Rug",
+      "sourceDescription": "A traditional medallion pattern in soft, faded tones with a low pile that suits busy rooms.",
+      "name": "Dywan z efektem postarzenia",
+      "description": "Tradycyjny wzór medalionowy w łagodnych, wyblakłych odcieniach, z niskim runem odpowiednim do często używanych pomieszczeń."
+    },
+    {
+      "id": "home-7",
+      "sourceName": "Reclaimed Wood Bedside Table",
+      "sourceDescription": "A chunky bedside table made from reclaimed timber, with an open shelf for books.",
+      "name": "Stolik nocny z drewna z odzysku",
+      "description": "Masywny stolik nocny z drewna z odzysku, z otwartą półką na książki."
+    },
+    {
+      "id": "home-8",
+      "sourceName": "Speckled Stoneware Cups, Set of 4",
+      "sourceDescription": "Hand-thrown stoneware cups with a speckled cream glaze and a raw clay base.",
+      "name": "Zestaw 4 nakrapianych kubków kamionkowych",
+      "description": "Ręcznie toczone kubki kamionkowe z nakrapianym kremowym szkliwem i nieszkliwioną podstawą."
+    },
+    {
+      "id": "home-9",
+      "sourceName": "Stoneware Bud Vases, Set of 3",
+      "sourceDescription": "Three bottle-neck vases in a grey speckled glaze, sized for dried stems or a single fresh bloom.",
+      "name": "Zestaw 3 małych wazonów kamionkowych",
+      "description": "Trzy wazony z wąską szyjką i szarym nakrapianym szkliwem, na suszone łodygi lub pojedynczy świeży kwiat."
+    },
+    {
+      "id": "home-10",
+      "sourceName": "Chunky Knit Throw",
+      "sourceDescription": "An oversized hand-knitted throw in cream chenille, heavy enough to feel cosy draped over a sofa or the end of a bed.",
+      "name": "Koc o grubym splocie",
+      "description": "Duży, ręcznie dziergany koc z kremowej szenili, przyjemnie ciężki, idealny na sofę lub nogi łóżka."
+    },
+    {
+      "id": "home-11",
+      "sourceName": "Stonewashed Linen Bedding Set",
+      "sourceDescription": "A duvet cover, fitted sheet and pillowcases in stonewashed French linen, in white and sage, soft from the very first night.",
+      "name": "Zestaw pościeli z pranego lnu",
+      "description": "Poszwa na kołdrę, prześcieradło z gumką i poszewki z pranego francuskiego lnu w bieli i szałwii, miękkie od pierwszej nocy."
+    },
+    {
+      "id": "home-12",
+      "sourceName": "Round Oak Wall Mirror",
+      "sourceDescription": "A 70 cm round mirror framed in solid oiled oak, sized for a hallway or above a console table.",
+      "name": "Okrągłe lustro ścienne w dębowej ramie",
+      "description": "Okrągłe lustro o średnicy 70 cm w ramie z litego olejowanego dębu, do przedpokoju lub nad konsolę."
+    },
+    {
+      "id": "home-13",
+      "sourceName": "Stoneware Table Lamp",
+      "sourceDescription": "A rounded charcoal stoneware base under a tapered amber shade that casts a warm, diffused glow.",
+      "name": "Kamionkowa lampa stołowa",
+      "description": "Zaokrąglona podstawa z kamionki w kolorze grafitowym i zwężany bursztynowy abażur dający ciepłe, rozproszone światło."
+    },
+    {
+      "id": "home-14",
+      "sourceName": "Terracotta Planter",
+      "sourceDescription": "A hand-thrown terracotta pot with a limewash-streaked finish and a drainage hole, for succulents and small houseplants.",
+      "name": "Doniczka z terakoty",
+      "description": "Ręcznie toczona doniczka terakotowa z przecieranym wapiennym wykończeniem i otworem odpływowym, na sukulenty i niewielkie rośliny domowe."
+    },
+    {
+      "id": "home-15",
+      "sourceName": "Nesting Palm-Leaf Baskets",
+      "sourceDescription": "A nesting set of baskets hand-woven from natural palm leaf, for fruit, keys or everyday odds and ends.",
+      "name": "Zestaw koszy z liści palmowych",
+      "description": "Kosze wkładane jeden w drugi, ręcznie plecione z naturalnych liści palmowych, na owoce, klucze i codzienne drobiazgi."
+    },
+    {
+      "id": "accessories-1",
+      "sourceName": "Round Metal Sunglasses",
+      "sourceDescription": "Slim gold-tone round frames with polarised lenses and full UV400 protection.",
+      "name": "Okrągłe metalowe okulary przeciwsłoneczne",
+      "description": "Smukłe, okrągłe oprawki w złotym kolorze, ze szkłami polaryzacyjnymi i pełną ochroną UV400."
+    },
+    {
+      "id": "accessories-2",
+      "sourceName": "Leather Messenger Bag",
+      "sourceDescription": "A vintage-finish leather messenger with twin buckle straps, two front pockets and a padded laptop sleeve.",
+      "name": "Skórzana torba listonoszka",
+      "description": "Skórzana listonoszka z postarzanym wykończeniem, dwoma paskami ze sprzączkami, dwiema przednimi kieszeniami i wyściełaną przegrodą na laptopa."
+    },
+    {
+      "id": "accessories-3",
+      "sourceName": "Minimalist Leather-Strap Watch",
+      "sourceDescription": "A clean white dial in a slim rose-gold-tone case on a soft taupe leather strap.",
+      "name": "Minimalistyczny zegarek na skórzanym pasku",
+      "description": "Prosta biała tarcza w smukłej kopercie w kolorze różowego złota, na miękkim szarobrązowym skórzanym pasku."
+    },
+    {
+      "id": "accessories-4",
+      "sourceName": "Leather Crossbody Bag",
+      "sourceDescription": "A structured tan crossbody with a fold-over flap, magnetic closure and adjustable strap.",
+      "name": "Skórzana torebka na ramię",
+      "description": "Usztywniana jasnobrązowa torebka z klapką, zapięciem magnetycznym i regulowanym paskiem do noszenia na ukos."
+    },
+    {
+      "id": "accessories-5",
+      "sourceName": "Leather Backpack",
+      "sourceDescription": "A hand-finished leather backpack with a zipped front pocket and room for a 15-inch laptop.",
+      "name": "Skórzany plecak",
+      "description": "Ręcznie wykańczany skórzany plecak z przednią kieszenią na zamek i miejscem na laptopa 15-calowego."
+    },
+    {
+      "id": "accessories-6",
+      "sourceName": "Chunky Chain Bracelet",
+      "sourceDescription": "A bold chain bracelet in 18-carat gold vermeil with a secure lobster clasp.",
+      "name": "Masywna bransoletka łańcuchowa",
+      "description": "Wyrazista bransoletka łańcuchowa ze srebra pokrytego 18-karatowym złotem, z bezpiecznym zapięciem typu karabińczyk."
+    },
+    {
+      "id": "accessories-7",
+      "sourceName": "Freshwater Pearl Necklace",
+      "sourceDescription": "Hand-knotted freshwater pearls with a sterling silver clasp, presented in a gift box.",
+      "name": "Naszyjnik z pereł słodkowodnych",
+      "description": "Ręcznie wiązane perły słodkowodne ze srebrnym zapięciem, w pudełku prezentowym."
+    },
+    {
+      "id": "accessories-8",
+      "sourceName": "Leather Bifold Wallet",
+      "sourceDescription": "A slim bifold in vegetable-tanned leather with six card slots that softens and darkens with use.",
+      "name": "Skórzany portfel składany",
+      "description": "Smukły portfel ze skóry garbowanej roślinnie, z sześcioma przegródkami na karty, który mięknie i ciemnieje z czasem."
+    },
+    {
+      "id": "accessories-9",
+      "sourceName": "Halo Cocktail Ring",
+      "sourceDescription": "A sterling silver ring set with a round white topaz framed by a halo of sparkling stones.",
+      "name": "Pierścionek koktajlowy z topazem",
+      "description": "Srebrny pierścionek z okrągłym białym topazem otoczonym lśniącymi kamieniami."
+    },
+    {
+      "id": "accessories-10",
+      "sourceName": "Browline Optical Frames",
+      "sourceDescription": "Classic browline frames with a tortoiseshell acetate brow and slim gold-tone rims, ready for prescription lenses.",
+      "name": "Oprawki korekcyjne z podkreśloną górną linią",
+      "description": "Klasyczne oprawki z górną częścią z octanu w szylkretowy wzór i smukłymi metalowymi elementami w złotym kolorze, do szkieł korekcyjnych."
+    },
+    {
+      "id": "accessories-11",
+      "sourceName": "Gold Huggie Hoop Earrings",
+      "sourceDescription": "Small, chunky 18k gold-plated hoops that hug the lobe, with a hinged clasp and light enough to wear every day.",
+      "name": "Złocone kolczyki małe kółka",
+      "description": "Małe, masywne kółka pokryte 18-karatowym złotem, przylegające do płatka ucha, z zawiasowym zapięciem, lekkie na co dzień."
+    },
+    {
+      "id": "accessories-12",
+      "sourceName": "Braided Leather Belt",
+      "sourceDescription": "A hand-braided belt in chestnut leather with a brushed silver buckle; the weave lets you fasten it at any length.",
+      "name": "Pleciony pasek skórzany",
+      "description": "Ręcznie pleciony pasek z kasztanowej skóry ze szczotkowaną srebrną sprzączką; splot umożliwia zapięcie na dowolnej długości."
+    },
+    {
+      "id": "accessories-13",
+      "sourceName": "Straw Fedora",
+      "sourceDescription": "A woven-straw fedora with a striped grosgrain band, for sunny days in town or on the coast.",
+      "name": "Słomkowy kapelusz fedora",
+      "description": "Pleciony słomkowy kapelusz z pasiastą rypsową wstążką, na słoneczne dni w mieście i nad morzem."
+    },
+    {
+      "id": "accessories-14",
+      "sourceName": "Striped Fringed Scarf",
+      "sourceDescription": "A soft wool-blend scarf woven in stripes of berry, rose and slate, finished with a knotted fringe.",
+      "name": "Pasiasty szal z frędzlami",
+      "description": "Miękki szal z mieszanki wełny w pasy w odcieniach jagodowym, różowym i łupkowym, wykończony wiązanymi frędzlami."
+    },
+    {
+      "id": "accessories-15",
+      "sourceName": "Woven Market Tote",
+      "sourceDescription": "A roomy woven tote with riveted leather handles, sturdy enough for the market and easy to wipe clean.",
+      "name": "Pleciona torba na zakupy",
+      "description": "Pojemna pleciona torba z nitowanymi skórzanymi uchwytami, wytrzymała na zakupy i łatwa do czyszczenia."
+    },
+    {
+      "id": "gifts-1",
+      "sourceName": "Artisan Chocolate Selection",
+      "sourceDescription": "Twenty hand-finished truffles and pralines in dark, milk and white chocolate.",
+      "name": "Wybór rzemieślniczych czekoladek",
+      "description": "Dwadzieścia ręcznie wykańczanych trufli i pralin z gorzkiej, mlecznej i białej czekolady."
+    },
+    {
+      "id": "gifts-2",
+      "sourceName": "Wooden Chess Set",
+      "sourceDescription": "A hardwood board with inlaid squares and weighted, hand-turned pieces.",
+      "name": "Drewniany zestaw szachowy",
+      "description": "Szachownica z twardego drewna z intarsjowanymi polami oraz obciążonymi, ręcznie toczonymi figurami."
+    },
+    {
+      "id": "gifts-3",
+      "sourceName": "Antique-Style Desk Globe",
+      "sourceDescription": "A 30 cm globe with antique-style cartography on a turned wooden base.",
+      "name": "Globus biurkowy w stylu antycznym",
+      "description": "Globus o średnicy 30 cm z mapą w stylu antycznym, na toczonej drewnianej podstawie."
+    },
+    {
+      "id": "gifts-4",
+      "sourceName": "Porcelain Tea Set for One",
+      "sourceDescription": "A white porcelain teapot with a woven cane handle and a matching cup for a calm tea ritual.",
+      "name": "Porcelanowy zestaw do herbaty dla jednej osoby",
+      "description": "Biały porcelanowy czajniczek z plecionym uchwytem z trzciny i dopasowaną filiżanką do spokojnego parzenia herbaty."
+    },
+    {
+      "id": "gifts-5",
+      "sourceName": "Amber & Oud Scented Candle",
+      "sourceDescription": "A slow-burning soy wax candle with notes of amber, oud and vanilla, in a reusable glass vessel.",
+      "name": "Świeca zapachowa z bursztynem i oudem",
+      "description": "Wolno spalająca się świeca z wosku sojowego o nutach bursztynu, oudu i wanilii, w szklanym naczyniu wielokrotnego użytku."
+    },
+    {
+      "id": "gifts-6",
+      "sourceName": "Juniper Bonsai Tree",
+      "sourceDescription": "A hand-styled juniper bonsai in a glazed ceramic pot, with a care guide for first-time growers.",
+      "name": "Drzewko bonsai z jałowca",
+      "description": "Ręcznie formowany jałowiec bonsai w szkliwionej ceramicznej doniczce, z poradnikiem pielęgnacji dla początkujących."
+    },
+    {
+      "id": "gifts-7",
+      "sourceName": "Picnic Hamper for Two",
+      "sourceDescription": "A lidded willow hamper with leather fastenings, packed with a cheese board and tableware for two.",
+      "name": "Kosz piknikowy dla dwojga",
+      "description": "Wiklinowy kosz z pokrywą i skórzanymi zapięciami, wyposażony w deskę do serów i zastawę dla dwóch osób."
+    },
+    {
+      "id": "gifts-8",
+      "sourceName": "Fountain Pen & Notebook Set",
+      "sourceDescription": "A lacquered fountain pen with a steel nib, paired with a lay-flat notebook of ink-friendly paper.",
+      "name": "Zestaw pióra wiecznego i notesu",
+      "description": "Lakierowane pióro wieczne ze stalową stalówką oraz rozkładany na płasko notes z papierem odpowiednim do atramentu."
+    },
+    {
+      "id": "gifts-9",
+      "sourceName": "Heirloom Aviator Teddy Bear",
+      "sourceDescription": "A fully jointed teddy in aviator goggles and a knitted scarf, made to be treasured for years.",
+      "name": "Pamiątkowy miś lotnik",
+      "description": "Miś z ruchomymi kończynami, w goglach lotniczych i dzierganym szaliku, stworzony do przechowywania przez lata."
+    },
+    {
+      "id": "gifts-10",
+      "sourceName": "Glass Succulent Terrarium",
+      "sourceDescription": "A hand-blown glass globe planted with living succulents, moss and stones, needing only a little water every few weeks.",
+      "name": "Szklane terrarium z sukulentami",
+      "description": "Ręcznie dmuchana szklana kula z żywymi sukulentami, mchem i kamieniami, wymagająca jedynie odrobiny wody co kilka tygodni."
+    },
+    {
+      "id": "gifts-11",
+      "sourceName": "Dried Flower Bouquet",
+      "sourceDescription": "Everlasting flowers and grasses in soft blush tones, wrapped in paper and tied with ribbon, made to last for months.",
+      "name": "Bukiet suszonych kwiatów",
+      "description": "Trwałe kwiaty i trawy w delikatnych różowych odcieniach, owinięte papierem i przewiązane wstążką, zachowujące urok przez wiele miesięcy."
+    },
+    {
+      "id": "gifts-12",
+      "sourceName": "Old Town Jigsaw Puzzle, 1000 Pieces",
+      "sourceDescription": "A finely drawn bird’s-eye view of an old European town, printed on thick board with a linen finish.",
+      "name": "Puzzle Stare Miasto, 1000 elementów",
+      "description": "Szczegółowy widok starego europejskiego miasta z lotu ptaka, wydrukowany na grubej tekturze z fakturą lnu."
+    },
+    {
+      "id": "gifts-13",
+      "sourceName": "Wildflower Honey",
+      "sourceDescription": "Raw, unfiltered honey from hives among summer wildflowers, in a 340 g jar tied with twine.",
+      "name": "Miód wielokwiatowy",
+      "description": "Surowy, niefiltrowany miód z uli wśród letnich dzikich kwiatów, w słoiku 340 g przewiązanym sznurkiem."
+    },
+    {
+      "id": "gifts-14",
+      "sourceName": "Single-Origin Coffee Beans",
+      "sourceDescription": "Whole beans from a single Ethiopian farm, roasted in small batches for notes of blueberry, jasmine and dark chocolate. 250 g.",
+      "name": "Kawa ziarnista z jednej plantacji",
+      "description": "Całe ziarna z jednej etiopskiej plantacji, palone w małych partiach, z nutami borówki, jaśminu i gorzkiej czekolady. 250 g."
+    },
+    {
+      "id": "gifts-15",
+      "sourceName": "Oak Hourglass Sand Timer",
+      "sourceDescription": "A 30-minute hourglass in hand-blown glass, set in a turned wooden frame, for focused work or a slow Sunday.",
+      "name": "Klepsydra w dębowej oprawie",
+      "description": "Trzydziestominutowa klepsydra z ręcznie dmuchanego szkła w toczonej drewnianej ramie, do skupionej pracy lub spokojnej niedzieli."
+    }
+  ]
+}

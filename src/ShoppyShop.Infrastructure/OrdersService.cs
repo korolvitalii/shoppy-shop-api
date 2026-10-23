@@ -10,7 +10,7 @@ using ShoppyShop.Domain;
 
 namespace ShoppyShop.Infrastructure;
 
-public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvider) : IOrdersService
+public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvider, CatalogueLocale? requestLocale = null) : IOrdersService
 {
     private const int DefaultHistoryPageSize = 50;
     private const int MaxHistoryPageSize = 100;
@@ -49,14 +49,14 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
 
         var query = SeekBefore(cursor)
             .Where(x => x.UserId == userId)
-            .Include(x => x.Lines)
+            .Include(x => x.Lines).ThenInclude(x => x.Translations)
             .OrderByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.OrderNumber)
             .Take(pageSize);
 
-        return (await query.ToArrayAsync(cancellationToken))
-            .Select(MapOrder)
-            .ToArray();
+        var orders = await query.ToArrayAsync(cancellationToken);
+        await RestoreHistoricalTranslationsAsync(orders, cancellationToken);
+        return orders.Select(MapOrder).ToArray();
     }
 
     /// <summary>
@@ -124,9 +124,11 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
         }
 
         var order = await dbContext.Orders.AsNoTracking()
-            .Include(x => x.Lines)
+            .Include(x => x.Lines).ThenInclude(x => x.Translations)
             .SingleOrDefaultAsync(x => x.UserId == userId && x.OrderNumber == orderNumber, cancellationToken);
-        return order is null ? null : MapOrder(order);
+        if (order is null) return null;
+        await RestoreHistoricalTranslationsAsync([order], cancellationToken);
+        return MapOrder(order);
     }
 
     public async Task<OrderDto> CreateAsync(
@@ -162,7 +164,7 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var previous = await dbContext.OrderRequests.IgnoreQueryFilters()
-            .Include(x => x.Order!).ThenInclude(x => x.Lines)
+            .Include(x => x.Order!).ThenInclude(x => x.Lines).ThenInclude(x => x.Translations)
             .SingleOrDefaultAsync(x => x.UserId == userId && x.Key == idempotencyKey, cancellationToken);
 
         if (previous is not null && previous.ExpiresAt > now)
@@ -177,17 +179,17 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
         }
 
         var productIds = quantities.Keys.ToArray();
-        var products = await dbContext.Products.AsNoTracking()
+        var products = await dbContext.Products.AsNoTracking().Include(x => x.Translations)
             .Where(x => productIds.Contains(x.Id))
             .ToArrayAsync(cancellationToken);
         if (products.Length != productIds.Length)
         {
-            throw new AppUnprocessableException("One or more products do not exist.");
+            throw new AppUnprocessableException("One or more products do not exist.", "order.products_missing");
         }
 
         if (products.Any(x => !x.InStock))
         {
-            throw new AppConflictException("One or more products are out of stock.");
+            throw new AppConflictException("One or more products are out of stock.", "order.out_of_stock");
         }
 
         var order = new Order
@@ -211,7 +213,7 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
 
         foreach (var product in products)
         {
-            order.Lines.Add(new OrderLine
+            var line = new OrderLine
             {
                 Id = Guid.NewGuid(),
                 ProductId = product.Id,
@@ -220,7 +222,10 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
                 ImageUrl = product.ImageUrl,
                 UnitPrice = OrderPricing.UnitPrice(product.Price, product.SalePrice),
                 Quantity = quantities[product.Id],
-            });
+            };
+            foreach (var text in product.Translations.Where(t => t.SourceName == product.Name && t.SourceDescription == product.Description))
+                line.Translations.Add(new OrderLineTranslation { Locale = text.Locale, Name = text.Name });
+            order.Lines.Add(line);
         }
 
         (order.Subtotal, order.DeliveryCharge, order.Total) =
@@ -247,7 +252,7 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
             await transaction.RollbackAsync(cancellationToken);
             dbContext.ChangeTracker.Clear();
             var winner = await dbContext.OrderRequests.AsNoTracking().IgnoreQueryFilters()
-                .Include(x => x.Order!).ThenInclude(x => x.Lines)
+                .Include(x => x.Order!).ThenInclude(x => x.Lines).ThenInclude(x => x.Translations)
                 .SingleOrDefaultAsync(x => x.UserId == userId && x.Key == idempotencyKey, cancellationToken);
 
             if (winner?.Order is null)
@@ -262,19 +267,19 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
         return MapOrder(order);
     }
 
-    private static OrderDto ReplayOrder(OrderRequest previous, string requestHash)
+    private OrderDto ReplayOrder(OrderRequest previous, string requestHash)
     {
         if (!CryptographicOperations.FixedTimeEquals(
             Encoding.ASCII.GetBytes(previous.RequestHash),
             Encoding.ASCII.GetBytes(requestHash)))
         {
-            throw new AppConflictException("This idempotency key was already used with a different order.");
+            throw new AppConflictException("This idempotency key was already used with a different order.", "order.idempotency_conflict");
         }
 
         return MapOrder(previous.Order!);
     }
 
-    private static OrderDto MapOrder(Order order) => new(
+    private OrderDto MapOrder(Order order) => new(
         $"ORD-{order.OrderNumber:00000}",
         order.CreatedAt,
         order.Status,
@@ -284,7 +289,8 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
             x.ProductName,
             x.ImageUrl,
             x.UnitPrice,
-            x.Quantity)).ToArray(),
+            x.Quantity,
+            requestLocale is { IsSource: false } ? x.Translations.FirstOrDefault(t => t.Locale == requestLocale.Value)?.Name ?? x.ProductName : x.ProductName)).ToArray(),
         new DeliveryAddress(
             order.DeliveryName,
             order.DeliveryEmail,
@@ -297,6 +303,21 @@ public sealed class OrdersService(AppDbContext dbContext, TimeProvider timeProvi
         order.Subtotal,
         order.DeliveryCharge,
         order.Total);
+
+    private async Task RestoreHistoricalTranslationsAsync(IReadOnlyCollection<Order> orders, CancellationToken cancellationToken)
+    {
+        if (requestLocale is null || requestLocale.IsSource) return;
+        var lines = orders.SelectMany(x => x.Lines).Where(x => !x.Translations.Any(t => t.Locale == requestLocale.Value)).ToArray();
+        if (lines.Length == 0) return;
+        var ids = lines.Select(x => x.ProductId).Distinct().ToArray();
+        var translations = await dbContext.ProductTranslations.AsNoTracking()
+            .Where(x => x.Locale == requestLocale.Value && ids.Contains(x.ProductId)).ToArrayAsync(cancellationToken);
+        foreach (var line in lines)
+        {
+            var text = translations.FirstOrDefault(x => x.ProductId == line.ProductId && x.SourceName == line.ProductName);
+            if (text is not null) line.Translations.Add(new OrderLineTranslation { Locale = text.Locale, Name = text.Name });
+        }
+    }
 
     private static bool TryParseOrderNumber(string value, out long orderNumber)
     {

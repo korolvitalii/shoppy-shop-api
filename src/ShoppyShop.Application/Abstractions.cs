@@ -46,16 +46,23 @@ public interface IAssistantService
     Task<AssistantChatResponse> ChatAsync(AssistantChatRequest request, CancellationToken cancellationToken);
 }
 
-public sealed class AppValidationException(string message, IReadOnlyDictionary<string, string[]>? errors = null)
+public sealed class AppValidationException(string message, IReadOnlyDictionary<string, string[]>? errors = null,
+    string code = "validation.failed", IReadOnlyCollection<ValidationIssue>? issues = null)
     : Exception(message)
 {
     public IReadOnlyDictionary<string, string[]> Errors { get; } = errors ?? new Dictionary<string, string[]>();
+    public string Code { get; } = code;
+    public IReadOnlyCollection<ValidationIssue> Issues { get; } = issues ?? [];
 }
 
-public sealed class AppConflictException(string message) : Exception(message);
-public sealed class AppNotFoundException(string message) : Exception(message);
-public sealed class AppUnauthorizedException(string message) : Exception(message);
-public sealed class AppUnprocessableException(string message) : Exception(message);
+public sealed class AppConflictException(string message, string code = "request.conflict") : Exception(message)
+{ public string Code { get; } = code; }
+public sealed class AppNotFoundException(string message, string code = "resource.not_found") : Exception(message)
+{ public string Code { get; } = code; }
+public sealed class AppUnauthorizedException(string message, string code = "auth.session_invalid") : Exception(message)
+{ public string Code { get; } = code; }
+public sealed class AppUnprocessableException(string message, string code = "request.unprocessable") : Exception(message)
+{ public string Code { get; } = code; }
 
 /// <summary>
 /// A feature is switched off by configuration. Distinct from a failure: the request was well formed,
@@ -63,3 +70,5 @@ public sealed class AppUnprocessableException(string message) : Exception(messag
 /// rather than 503 — see the reasoning in <c>ApiExceptionHandler</c>.
 /// </summary>
 public sealed class AppServiceUnavailableException(string message) : Exception(message);
+
+public sealed record ValidationIssue(string? Field, string Code, IReadOnlyDictionary<string, object>? Parameters = null);

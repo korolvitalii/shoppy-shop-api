@@ -8,8 +8,10 @@ using ShoppyShop.Domain;
 
 namespace ShoppyShop.Infrastructure;
 
-public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogueService
+public sealed partial class CatalogueService(AppDbContext dbContext, CatalogueLocale? requestLocale = null) : ICatalogueService
 {
+    private string Locale => requestLocale?.Value ?? CatalogueLocale.LegacyDefault;
+    private string? TranslationLocale => requestLocale is { IsSource: false } ? requestLocale.Value : null;
     private const int DefaultLimit = 24;
     private const int MaxLimit = 100;
 
@@ -28,15 +30,16 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
             ? dbContext.ProductGroups.IgnoreQueryFilters()
             : dbContext.ProductGroups;
 
+        var locale = Locale;
         return await groups.AsNoTracking()
             .OrderBy(x => x.DisplayOrder)
             .Select(x => new ProductGroupDto(
                 x.Id,
-                x.Name,
-                x.Description,
+                x.Translations.Where(t => t.Locale == locale && t.SourceName == x.Name && t.SourceDescription == x.Description && t.SourceBadge == x.Badge).Select(t => t.Name).FirstOrDefault() ?? x.Name,
+                x.Translations.Where(t => t.Locale == locale && t.SourceName == x.Name && t.SourceDescription == x.Description && t.SourceBadge == x.Badge).Select(t => t.Description).FirstOrDefault() ?? x.Description,
                 x.ImageUrl,
                 x.Products.Count(product => !product.IsDeleted),
-                x.Badge))
+                x.Translations.Where(t => t.Locale == locale && t.SourceName == x.Name && t.SourceDescription == x.Description && t.SourceBadge == x.Badge).Select(t => t.Badge).FirstOrDefault() ?? x.Badge))
             .ToArrayAsync(cancellationToken);
     }
 
@@ -57,7 +60,7 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
         var products = includeDeleted ? dbContext.Products.IgnoreQueryFilters() : dbContext.Products;
         return await products.AsNoTracking()
             .Where(x => x.GroupId == groupId && x.Id == productId)
-            .Select(ProductProjection)
+            .Select(LocalizedProductProjection(TranslationLocale))
             .SingleOrDefaultAsync(cancellationToken);
     }
 
@@ -69,11 +72,17 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
         var sort = ProductSorts.Normalize(query.Sort);
         var limit = ResolveLimit(query.Limit);
 
-        var products = SeekAfter(sort, ProductCursor.Decode(query.Cursor, sort));
+        var cursor = ProductCursor.Decode(query.Cursor, sort, Locale);
+        // A translated name sort seeks on the projected name (below), not an indexed column: every
+        // row resolves its translation through a correlated subquery. Fine for the seeded catalogue;
+        // at real size it needs a stored, indexed sort key per locale.
+        var source = TranslationLocale is not null && sort == ProductSorts.Name ? dbContext.Products : SeekAfter(sort, cursor);
         if (query.IncludeDeleted)
         {
-            products = products.IgnoreQueryFilters();
+            source = source.IgnoreQueryFilters();
         }
+
+        var products = source.Select(LocalizedProductProjection(TranslationLocale));
 
         if (!string.IsNullOrWhiteSpace(groupId))
         {
@@ -140,6 +149,14 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
             ? await products.AsNoTracking().CountAsync(cancellationToken)
             : null;
 
+        if (TranslationLocale is not null && sort == ProductSorts.Name && cursor is not null)
+        {
+            // EF translates these comparisons; they must use the database ORDER BY collation.
+#pragma warning disable CA1309
+            products = products.Where(x => string.Compare(x.Name, cursor.Key) > 0 ||
+                (x.Name == cursor.Key && string.Compare(x.Id, cursor.Id) > 0));
+#pragma warning restore CA1309
+        }
         products = ApplyOrder(products, sort);
 
         // Fetching one row past the page is how we learn whether a further page exists. The
@@ -147,7 +164,6 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
         // page itself, and the client only needs to know "is there more", not how much more.
         var rows = await products.AsNoTracking()
             .Take(limit + 1)
-            .Select(ProductProjection)
             .ToArrayAsync(cancellationToken);
 
         if (rows.Length <= limit)
@@ -157,7 +173,7 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
 
         var items = rows[..limit];
         var last = items[^1];
-        return new ProductPageDto(items, new ProductCursor(sort, SortKey(sort, last), last.Id).Encode(), totalCount);
+        return new ProductPageDto(items, new ProductCursor(sort, SortKey(sort, last), last.Id, Locale).Encode(), totalCount);
     }
 
     /// <summary>
@@ -206,7 +222,7 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
     /// where a page boundary falls inside a run of rows sharing a name or price, a mismatch silently
     /// drops or repeats them.
     /// </summary>
-    private static IQueryable<Product> ApplyOrder(IQueryable<Product> products, string sort) => sort switch
+    private static IQueryable<ProductDto> ApplyOrder(IQueryable<ProductDto> products, string sort) => sort switch
     {
         ProductSorts.PriceAscending => products.OrderBy(x => x.SalePrice ?? x.Price).ThenBy(x => x.Id),
 
@@ -245,7 +261,8 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
     }
 
     private static AppValidationException Invalid(string field, string message) =>
-        new(message, new Dictionary<string, string[]> { [field] = [message] });
+        new(message, new Dictionary<string, string[]> { [field] = [message] }, "catalogue." + field + "_invalid",
+            [new ValidationIssue(field, "catalogue." + field + "_invalid", new Dictionary<string, object> { ["maximum"] = field == "search" ? MaxSearchLength : MaxLimit })]);
 
     /// <summary>
     /// Source-generated rather than a <see cref="Regex"/> literal: the static <c>Regex.Split</c>
@@ -259,17 +276,19 @@ public sealed partial class CatalogueService(AppDbContext dbContext) : ICatalogu
     private static string NormalizeSearchTerm(string term) =>
         term.Length > 3 && term.EndsWith('s') ? term[..^1] : term;
 
-    private static System.Linq.Expressions.Expression<Func<Product, ProductDto>> ProductProjection => product =>
-        new ProductDto(
-            product.Id,
-            product.GroupId,
-            product.Name,
-            product.Brand,
-            product.Description,
-            product.ImageUrl,
-            product.Price,
-            product.SalePrice,
-            product.InStock,
-            product.IsNew,
-            product.GiftWrappable);
+    internal static System.Linq.Expressions.Expression<Func<Product, ProductDto>> LocalizedProductProjection(string? locale) => product =>
+        new ProductDto
+        {
+            Id = product.Id,
+            GroupId = product.GroupId,
+            Name = locale == null ? product.Name : product.Translations.Where(t => t.Locale == locale && t.SourceName == product.Name && t.SourceDescription == product.Description).Select(t => t.Name).FirstOrDefault() ?? product.Name,
+            Brand = product.Brand,
+            Description = locale == null ? product.Description : product.Translations.Where(t => t.Locale == locale && t.SourceName == product.Name && t.SourceDescription == product.Description).Select(t => t.Description).FirstOrDefault() ?? product.Description,
+            ImageUrl = product.ImageUrl,
+            Price = product.Price,
+            SalePrice = product.SalePrice,
+            InStock = product.InStock,
+            IsNew = product.IsNew,
+            GiftWrappable = product.GiftWrappable,
+        };
 }

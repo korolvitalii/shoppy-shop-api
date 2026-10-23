@@ -55,6 +55,21 @@ public sealed class ApiExceptionHandler(
             problem.Extensions["errors"] = validation.Errors;
         }
 
+        problem.Extensions["code"] = exception switch
+        {
+            AppValidationException value => value.Code,
+            AppUnauthorizedException value => value.Code,
+            AppNotFoundException value => value.Code,
+            AppConflictException value => value.Code,
+            AppUnprocessableException value => value.Code,
+            AppServiceUnavailableException => "assistant.unavailable",
+            _ => "server.error",
+        };
+        if (exception is AppValidationException { Issues.Count: > 0 } issue)
+        {
+            problem.Extensions["validationIssues"] = issue.Issues;
+        }
+
         return await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,

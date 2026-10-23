@@ -21,7 +21,15 @@ public sealed record ProductDto(
     decimal? SalePrice,
     bool InStock,
     bool IsNew,
-    bool GiftWrappable);
+    bool GiftWrappable)
+{
+    /// <summary>
+    /// For EF projections only. <c>CatalogueService</c> sorts and filters the localized projection, and
+    /// EF can translate member access after a projection only when it uses member initialization —
+    /// the positional constructor hides which argument became which property.
+    /// </summary>
+    public ProductDto() : this("", "", "", "", "", "", 0, null, false, false, false) { }
+}
 
 public sealed record ProductQuery(
     string? Search = null,
@@ -98,7 +106,8 @@ public sealed record OrderLineDto(
     string Name,
     string ImageUrl,
     decimal UnitPrice,
-    int Quantity);
+    int Quantity,
+    string? DisplayName = null);
 
 public sealed record OrderDto(
     string Id,

@@ -10,6 +10,7 @@ public sealed class ProductGroup
     public int DisplayOrder { get; set; }
     public bool IsDeleted { get; set; }
     public List<Product> Products { get; } = [];
+    public List<ProductGroupTranslation> Translations { get; } = [];
 }
 
 public sealed class Product
@@ -27,4 +28,5 @@ public sealed class Product
     public bool GiftWrappable { get; set; }
     public bool IsDeleted { get; set; }
     public ProductGroup? Group { get; set; }
+    public List<ProductTranslation> Translations { get; } = [];
 }
