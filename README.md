@@ -186,7 +186,7 @@ Full card numbers are never processed or stored.
 
 ### Requirements
 
-* .NET SDK 10.0.302 or newer
+* .NET SDK 10.0.402 (see `global.json`)
 * Docker Desktop
 
 Node.js 22 or newer and npm 11 are needed only for the retained AWS CDK tooling and its CI checks.
