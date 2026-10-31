@@ -12,7 +12,7 @@ RUN dotnet publish src/ShoppyShop.Api/ShoppyShop.Api.csproj \
     -o /app/publish \
     /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.13-noble-chiseled@sha256:5165aeeb688df15e869a56a7584bb94bf16a14e0b3ba77b49fcdbe350f6b8020 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.14-noble-chiseled@sha256:c89a6a61f494f20a5ae302990e814627a8d91b332fd4a8e7c1707c2d4da9555d AS final
 WORKDIR /app
 
 ENV ASPNETCORE_HTTP_PORTS=8080
